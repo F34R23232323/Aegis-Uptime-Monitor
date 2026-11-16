@@ -3,6 +3,7 @@ use aegis_checks::Observation;
 use serde_json::Value;
 use sqlx::Row;
 use std::time::Duration;
+use chrono::Timelike;
 use uuid::Uuid;
 pub fn start(a: Arc<App>) {
     let scheduler = a.clone();
@@ -180,6 +181,8 @@ pub async fn record(a: &App, id: Uuid, o: Observation) -> Result<()> {
             .bind(incident)
             .execute(&mut *tx)
             .await?;
+            sqlx::query("UPDATE notification_deliveries SET state='cancelled',last_error=NULL WHERE incident_id=$1 AND event='DOWN' AND state='pending'")
+                .bind(incident).execute(&mut *tx).await?;
             enqueue(
                 &mut tx,
                 a,
@@ -220,7 +223,7 @@ async fn enqueue(
     let channels=sqlx::query("SELECT * FROM notification_channels c WHERE enabled AND $1=ANY(events) AND (cardinality(monitor_ids)=0 OR $2=ANY(monitor_ids)) AND ($1!='DOWN' OR NOT EXISTS(SELECT 1 FROM notification_deliveries d WHERE d.channel_id=c.id AND d.event='DOWN' AND d.payload->>'monitor_id'=($2::uuid)::text AND d.created_at>now()-make_interval(secs=>c.cooldown_seconds)))").bind(event).bind(id).fetch_all(&mut **tx).await?;
     for channel in channels {
         let payload = json!({"name":row.get::<String,_>("name"),"monitor_id":id,"incident_id":incident,"state":event,"reason":reason,"timestamp":chrono::Utc::now().to_rfc3339(),"duration":elapsed,"url":format!("{}/monitors/{}",a.origin,id),"template":channel.get::<Value,_>("template")});
-        sqlx::query("INSERT INTO notification_deliveries(id,channel_id,incident_id,event,payload) VALUES($1,$2,$3,$4,$5) ON CONFLICT(channel_id,incident_id,event) DO NOTHING").bind(Uuid::new_v4()).bind(channel.get::<Uuid,_>("id")).bind(incident).bind(event).bind(payload).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO notification_deliveries(id,channel_id,incident_id,event,payload,due_at) VALUES($1,$2,$3,$4,$5,now()+make_interval(secs=>$6)) ON CONFLICT(channel_id,incident_id,event) DO NOTHING").bind(Uuid::new_v4()).bind(channel.get::<Uuid,_>("id")).bind(incident).bind(event).bind(payload).bind(if event == "DOWN" { channel.get::<i32,_>("delay_seconds") } else { 0 }).execute(&mut **tx).await?;
     }
     Ok(())
 }
@@ -238,6 +241,27 @@ pub(crate) async fn deliver(a: &App) -> Result<()> {
         } else {
             None
         };
+        if job.get::<String, _>("event") == "DOWN"
+            && let Some(monitor_id) = job.get::<Value, _>("payload")["monitor_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()) {
+                let parent_down: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM monitors child JOIN monitors parent ON parent.id=child.depends_on WHERE child.id=$1 AND parent.state='DOWN' AND parent.enabled)")
+                    .bind(monitor_id).fetch_one(&a.db).await?;
+                if parent_down {
+                    sqlx::query("UPDATE notification_deliveries SET due_at=now()+interval '60 seconds' WHERE id=$1")
+                        .bind(id).execute(&a.db).await?;
+                    continue;
+                }
+        }
+        if job.get::<String, _>("event") != "TEST"
+            && let Some(ref c) = channel
+            && let (Some(start), Some(end)) = (c.get::<Option<i32>, _>("quiet_start_minute"), c.get::<Option<i32>, _>("quiet_end_minute")) {
+                    let now = chrono::Utc::now();
+                    let minute = (now.time().num_seconds_from_midnight() / 60) as i32;
+                    if let Some(wait_minutes) = quiet_minutes(start, end, minute) {
+                        sqlx::query("UPDATE notification_deliveries SET due_at=now()+make_interval(secs=>$2) WHERE id=$1")
+                            .bind(id).bind(wait_minutes * 60).execute(&a.db).await?;
+                        continue;
+                    }
+        }
         let result = match channel {
             Some(c) => tokio::time::timeout(
                 Duration::from_secs(15),
@@ -260,8 +284,22 @@ pub(crate) async fn deliver(a: &App) -> Result<()> {
     }
     Ok(())
 }
+fn quiet_minutes(start: i32, end: i32, now: i32) -> Option<i32> {
+    if start < end {
+        (now >= start && now < end).then_some(end - now)
+    } else if now >= start {
+        Some(1440 - now + end)
+    } else if now < end {
+        Some(end - now)
+    } else {
+        None
+    }
+}
 async fn send(a: &App, c: &sqlx::postgres::PgRow, p: &Value) -> Result<()> {
     let endpoint = decrypt(a, &c.get::<String, _>("secret"))?;
+    if c.get::<String, _>("provider") == "email" {
+        return crate::notifications::send_email(a, &endpoint, p).await;
+    }
     let u = reqwest::Url::parse(&endpoint).map_err(|_| bad("Invalid provider URL"))?;
     let host = u.host_str().ok_or_else(|| bad("Missing provider host"))?;
     let addresses = aegis_checks::resolve(
@@ -305,6 +343,7 @@ async fn prune(a: &App) -> Result<()> {
     for query in [
         "DELETE FROM checks c USING monitors m WHERE c.monitor_id=m.id AND c.created_at<now()-make_interval(days=>coalesce((m.config->>'retention_days')::integer,90))",
         "DELETE FROM agent_submissions WHERE created_at<now()-interval '1 day'",
+        "DELETE FROM server_metric_samples WHERE bucket<now()-interval '90 days'",
         "DELETE FROM sessions WHERE expires_at<now()",
         "DELETE FROM login_attempts WHERE window_start<now()-interval '1 day'",
         "DELETE FROM admin_audit_events WHERE created_at<now()-interval '365 days'",
@@ -318,6 +357,13 @@ async fn prune(a: &App) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn quiet_hours_cross_midnight_and_end_exclusively() {
+        assert_eq!(quiet_minutes(22 * 60, 7 * 60, 23 * 60), Some(8 * 60));
+        assert_eq!(quiet_minutes(22 * 60, 7 * 60, 6 * 60), Some(60));
+        assert_eq!(quiet_minutes(22 * 60, 7 * 60, 7 * 60), None);
+        assert_eq!(quiet_minutes(9 * 60, 17 * 60, 12 * 60), Some(5 * 60));
+    }
     #[test]
     fn stale_agent_is_failure() {
         let m = aegis_core::MonitorInput {

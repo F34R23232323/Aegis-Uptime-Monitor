@@ -106,6 +106,12 @@ pub async fn monitors(
     }
     Ok(Json(sqlx::query_scalar("SELECT coalesce(jsonb_agg(to_jsonb(m)-'push_token_hash'-'secret_config'||jsonb_build_object('has_credentials',m.secret_config IS NOT NULL) ORDER BY m.created_at DESC),'[]') FROM (SELECT * FROM monitors WHERE ($1::text IS NULL OR name ILIKE '%'||$1||'%' OR target ILIKE '%'||$1||'%' OR group_name ILIKE '%'||$1||'%') AND ($2::text IS NULL OR state=$2) AND ($3::text IS NULL OR kind=$3) AND ($4::uuid IS NULL OR server_id=$4) ORDER BY created_at DESC LIMIT $5 OFFSET $6)m").bind(q.q).bind(q.state).bind(q.kind).bind(q.server_id).bind(q.limit.unwrap_or(500).clamp(1,500)).bind(q.offset.unwrap_or(0).clamp(0,1000000)).fetch_one(&a.db).await?))
 }
+pub async fn monitor_search_count(State(a): State<Arc<App>>, Query(q): Query<MonitorList>) -> Result<Json<Value>> {
+    if q.q.as_ref().is_some_and(|s| s.len() > 200) { return Err(bad("Search query is too long")); }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM monitors WHERE ($1::text IS NULL OR name ILIKE '%'||$1||'%' OR target ILIKE '%'||$1||'%' OR group_name ILIKE '%'||$1||'%') AND ($2::text IS NULL OR state=$2) AND ($3::text IS NULL OR kind=$3) AND ($4::uuid IS NULL OR server_id=$4)")
+        .bind(q.q).bind(q.state).bind(q.kind).bind(q.server_id).fetch_one(&a.db).await?;
+    Ok(Json(json!({"total":count})))
+}
 pub async fn monitor(State(a): State<Arc<App>>, Path(id): Path<Uuid>) -> Result<Json<Value>> {
     Ok(Json(
         sqlx::query_scalar("SELECT to_jsonb(m)-'push_token_hash'-'secret_config'||jsonb_build_object('has_credentials',m.secret_config IS NOT NULL) FROM monitors m WHERE id=$1")
@@ -170,6 +176,18 @@ async fn validate(a: &App, m: &MonitorInput) -> Result<Option<Uuid>> {
     }
     Ok(id)
 }
+async fn validate_dependency(a: &App, parent: Option<Uuid>, child: Option<Uuid>) -> Result<()> {
+    let Some(parent) = parent else { return Ok(()); };
+    if child == Some(parent) { return Err(bad("A monitor cannot depend on itself")); }
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM monitors WHERE id=$1)").bind(parent).fetch_one(&a.db).await?;
+    if !exists { return Err(bad("Dependency monitor does not exist")); }
+    if let Some(child) = child {
+        let cycle: bool = sqlx::query_scalar("WITH RECURSIVE chain AS (SELECT id,depends_on FROM monitors WHERE id=$1 UNION SELECT m.id,m.depends_on FROM monitors m JOIN chain c ON m.id=c.depends_on) SELECT EXISTS(SELECT 1 FROM chain WHERE id=$2)")
+            .bind(parent).bind(child).fetch_one(&a.db).await?;
+        if cycle { return Err(bad("Monitor dependency would create a cycle")); }
+    }
+    Ok(())
+}
 pub async fn create_monitor(
     State(a): State<Arc<App>>,
     Extension(u): Extension<User>,
@@ -179,13 +197,14 @@ pub async fn create_monitor(
     let m = request.monitor;
     let encrypted = crate::credentials::protected(&a, &m, request.credentials.as_ref())?;
     let server = validate(&a, &m).await?;
+    validate_dependency(&a, request.depends_on, None).await?;
     let id = Uuid::new_v4();
     let push = if m.kind == "push" {
         Some(secret())
     } else {
         None
     };
-    sqlx::query("INSERT INTO monitors(id,name,kind,target,interval_seconds,timeout_seconds,failure_threshold,recovery_threshold,group_name,description,tags,public,server_id,config,push_token_hash,secret_config) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)").bind(id).bind(m.name.trim()).bind(m.kind).bind(m.target).bind(m.interval_seconds).bind(m.timeout_seconds).bind(m.failure_threshold).bind(m.recovery_threshold).bind(m.group_name).bind(m.description).bind(json!(m.tags)).bind(m.public).bind(server).bind(m.config).bind(push.as_ref().map(|s|hash(s))).bind(encrypted).execute(&a.db).await?;
+    sqlx::query("INSERT INTO monitors(id,name,kind,target,interval_seconds,timeout_seconds,failure_threshold,recovery_threshold,group_name,description,tags,public,server_id,config,push_token_hash,secret_config,depends_on) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)").bind(id).bind(m.name.trim()).bind(m.kind).bind(m.target).bind(m.interval_seconds).bind(m.timeout_seconds).bind(m.failure_threshold).bind(m.recovery_threshold).bind(m.group_name).bind(m.description).bind(json!(m.tags)).bind(m.public).bind(server).bind(m.config).bind(push.as_ref().map(|s|hash(s))).bind(encrypted).bind(request.depends_on).execute(&a.db).await?;
     let _ = a.events.send("monitors".into());
     Ok(Json(json!({"id":id,"push_token":push})))
 }
@@ -199,6 +218,7 @@ pub async fn update_monitor(
     let m = request.monitor;
     let encrypted = crate::credentials::protected(&a, &m, request.credentials.as_ref())?;
     let server = validate(&a, &m).await?;
+    validate_dependency(&a, request.depends_on, Some(id)).await?;
     let clear = request.credentials.as_ref().is_some_and(|c| c.clear);
     let mut tx = a.db.begin().await?;
     let old = sqlx::query("SELECT target,secret_config FROM monitors WHERE id=$1 FOR UPDATE")
@@ -220,7 +240,7 @@ pub async fn update_monitor(
             ));
         }
     }
-    let rows=sqlx::query("UPDATE monitors SET name=$2,target=$3,interval_seconds=$4,timeout_seconds=$5,failure_threshold=$6,recovery_threshold=$7,group_name=$8,description=$9,tags=$10,public=$11,server_id=$12,config=$13,secret_config=CASE WHEN $16 THEN NULL ELSE coalesce($15,secret_config) END,next_check_at=now() WHERE id=$1 AND kind=$14").bind(id).bind(m.name).bind(m.target).bind(m.interval_seconds).bind(m.timeout_seconds).bind(m.failure_threshold).bind(m.recovery_threshold).bind(m.group_name).bind(m.description).bind(json!(m.tags)).bind(m.public).bind(server).bind(m.config).bind(m.kind).bind(encrypted).bind(request.credentials.as_ref().is_some_and(|c|c.clear)).execute(&mut *tx).await?.rows_affected();
+    let rows=sqlx::query("UPDATE monitors SET name=$2,target=$3,interval_seconds=$4,timeout_seconds=$5,failure_threshold=$6,recovery_threshold=$7,group_name=$8,description=$9,tags=$10,public=$11,server_id=$12,config=$13,secret_config=CASE WHEN $16 THEN NULL ELSE coalesce($15,secret_config) END,depends_on=$17,next_check_at=now() WHERE id=$1 AND kind=$14").bind(id).bind(m.name).bind(m.target).bind(m.interval_seconds).bind(m.timeout_seconds).bind(m.failure_threshold).bind(m.recovery_threshold).bind(m.group_name).bind(m.description).bind(json!(m.tags)).bind(m.public).bind(server).bind(m.config).bind(m.kind).bind(encrypted).bind(request.credentials.as_ref().is_some_and(|c|c.clear)).bind(request.depends_on).execute(&mut *tx).await?.rows_affected();
     if rows == 0 {
         return Err(bad(
             "Monitor missing or type changed; create a new monitor to change type",
@@ -372,6 +392,12 @@ pub async fn servers(State(a): State<Arc<App>>) -> Result<Json<Value>> {
         .await?,
     ))
 }
+pub async fn server_metrics(State(a): State<Arc<App>>, Path(id): Path<Uuid>, Query(q): Query<History>) -> Result<Json<Value>> {
+    let days = q.days.clamp(1, 30);
+    let rows: Value = sqlx::query_scalar("SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.bucket),'[]') FROM (SELECT date_bin(make_interval(mins=>CASE WHEN $2<=1 THEN 5 WHEN $2<=7 THEN 30 ELSE 120 END),bucket,'2000-01-01'::timestamptz) AS bucket,avg(cpu_percent) AS cpu_percent,avg(memory_percent) AS memory_percent,avg(disk_percent) AS disk_percent FROM server_metric_samples WHERE server_id=$1 AND bucket>=now()-make_interval(days=>$2) GROUP BY 1 ORDER BY 1 LIMIT 1000)s")
+        .bind(id).bind(days).fetch_one(&a.db).await?;
+    Ok(Json(rows))
+}
 #[derive(Deserialize)]
 pub struct Name {
     name: String,
@@ -464,6 +490,17 @@ pub async fn agent_heartbeat(
     let inserted=sqlx::query("INSERT INTO agent_submissions(server_id,submission_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(id).bind(report.submission_id).execute(&mut *tx).await?.rows_affected();
     if inserted == 0 {
         return Ok(Json(json!({"ok":true,"duplicate":true})));
+    }
+    let host = &report.inventory["host"];
+    let metric = |name: &str| host[name].as_f64().filter(|v| (0.0..=100.0).contains(v));
+    let disk = host["disks"].as_array().and_then(|disks| disks.iter().filter_map(|disk| {
+        let total = disk["total"].as_f64()?;
+        let available = disk["available"].as_f64()?;
+        (total > 0.0 && available >= 0.0 && available <= total).then_some(100.0 * (total - available) / total)
+    }).reduce(f64::max));
+    if host.is_object() {
+        sqlx::query("INSERT INTO server_metric_samples(server_id,bucket,cpu_percent,memory_percent,disk_percent) VALUES($1,to_timestamp(floor(extract(epoch from now())/300)*300),$2,$3,$4) ON CONFLICT(server_id,bucket) DO UPDATE SET cpu_percent=$2,memory_percent=$3,disk_percent=$4")
+            .bind(id).bind(metric("cpu_percent")).bind(metric("memory_percent")).bind(disk).execute(&mut *tx).await?;
     }
     sqlx::query("UPDATE servers SET last_seen=now(),version=$2,inventory=$3 WHERE id=$1")
         .bind(id)

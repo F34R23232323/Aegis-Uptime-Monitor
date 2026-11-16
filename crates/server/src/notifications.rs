@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
 use uuid::Uuid;
+use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader}, net::TcpStream};
+use tokio_rustls::{TlsConnector, rustls::{ClientConfig, RootCertStore, pki_types::ServerName}};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EmbedTemplate {
@@ -74,6 +76,15 @@ fn valid_url(s: &str) -> bool {
                 && u.username().is_empty()
                 && u.password().is_none()
         })
+}
+fn email_address(s: &str) -> bool {
+    let Some((local, domain)) = s.split_once('@') else { return false; };
+    !local.is_empty() && !domain.is_empty() && s.len() <= 254
+        && local.bytes().all(|c| c.is_ascii_alphanumeric() || b".!#$%&'*+-/=?^_`{|}~".contains(&c))
+        && domain.split('.').all(|part| !part.is_empty() && part.len() <= 63
+            && !part.starts_with('-') && !part.ends_with('-')
+            && part.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-'))
+        && domain.contains('.')
 }
 fn color(s: &str) -> bool {
     s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|v| v.is_ascii_hexdigit())
@@ -279,6 +290,12 @@ pub struct ChannelInput {
     pub monitor_ids: Vec<Uuid>,
     #[serde(default)]
     pub cooldown_seconds: i32,
+    #[serde(default)]
+    pub quiet_start_minute: Option<i32>,
+    #[serde(default)]
+    pub quiet_end_minute: Option<i32>,
+    #[serde(default)]
+    pub delay_seconds: i32,
 }
 fn yes() -> bool {
     true
@@ -289,7 +306,7 @@ fn default_events() -> Vec<String> {
 async fn validate_channel(a: &App, c: &ChannelInput) -> Result<()> {
     if c.name.trim().is_empty()
         || c.name.len() > 120
-        || !["discord", "webhook"].contains(&c.provider.as_str())
+        || !["discord", "webhook", "email"].contains(&c.provider.as_str())
         || c.events.is_empty()
         || c.events.len() > 3
         || c.events
@@ -297,6 +314,12 @@ async fn validate_channel(a: &App, c: &ChannelInput) -> Result<()> {
             .any(|e| !["DOWN", "RECOVERED", "DEGRADED"].contains(&e.as_str()))
         || c.monitor_ids.len() > 200
         || !(0..=86400).contains(&c.cooldown_seconds)
+        || !(0..=86400).contains(&c.delay_seconds)
+        || match (c.quiet_start_minute, c.quiet_end_minute) {
+            (None, None) => false,
+            (Some(start), Some(end)) => !(0..1440).contains(&start) || !(0..1440).contains(&end) || start == end,
+            _ => true,
+        }
     {
         return Err(bad(
             "Invalid destination, event selection, route or cooldown",
@@ -304,6 +327,11 @@ async fn validate_channel(a: &App, c: &ChannelInput) -> Result<()> {
     }
     c.template.validate()?;
     if let Some(secret) = c.secret.as_ref().filter(|s| !s.is_empty()) {
+        if c.provider == "email" {
+            if !email_address(secret) {
+                return Err(bad("Enter one valid email address"));
+            }
+        } else {
         if secret.len() > 2048 {
             return Err(bad("Webhook URL too long"));
         }
@@ -341,6 +369,7 @@ async fn validate_channel(a: &App, c: &ChannelInput) -> Result<()> {
             .map_err(|_| bad("Webhook validation timed out"))?
             .map_err(|_| bad("Webhook target is blocked or could not resolve"))?;
         }
+        }
     }
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM monitors WHERE id=ANY($1)")
         .bind(&c.monitor_ids)
@@ -369,10 +398,10 @@ pub async fn create_channel(
         .secret
         .as_ref()
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| bad("Webhook URL is required"))?;
+        .ok_or_else(|| bad("A destination is required"))?;
     let id = Uuid::new_v4();
     let mut tx = a.db.begin().await?;
-    sqlx::query("INSERT INTO notification_channels(id,name,provider,secret,enabled,template,events,monitor_ids,cooldown_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)").bind(id).bind(c.name.trim()).bind(c.provider).bind(encrypt(&a,secret)?).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO notification_channels(id,name,provider,secret,enabled,template,events,monitor_ids,cooldown_seconds,quiet_start_minute,quiet_end_minute,delay_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)").bind(id).bind(c.name.trim()).bind(c.provider).bind(encrypt(&a,secret)?).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).bind(c.quiet_start_minute).bind(c.quiet_end_minute).bind(c.delay_seconds).execute(&mut *tx).await?;
     crate::status::audit(&mut tx, &u, "channel.created", id, json!({})).await?;
     tx.commit().await?;
     Ok(Json(json!({"id":id})))
@@ -392,7 +421,7 @@ pub async fn update_channel(
         .map(|s| encrypt(&a, s))
         .transpose()?;
     let mut tx = a.db.begin().await?;
-    let count=sqlx::query("UPDATE notification_channels SET name=$2,secret=coalesce($3,secret),enabled=$4,template=$5,events=$6,monitor_ids=$7,cooldown_seconds=$8,updated_at=now() WHERE id=$1 AND provider=$9").bind(id).bind(c.name.trim()).bind(secret).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).bind(c.provider).execute(&mut *tx).await?.rows_affected();
+    let count=sqlx::query("UPDATE notification_channels SET name=$2,secret=coalesce($3,secret),enabled=$4,template=$5,events=$6,monitor_ids=$7,cooldown_seconds=$8,quiet_start_minute=$10,quiet_end_minute=$11,delay_seconds=$12,updated_at=now() WHERE id=$1 AND provider=$9").bind(id).bind(c.name.trim()).bind(secret).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).bind(c.provider).bind(c.quiet_start_minute).bind(c.quiet_end_minute).bind(c.delay_seconds).execute(&mut *tx).await?.rows_affected();
     if count == 0 {
         return Err(bad(
             "Channel missing or provider changed; create a new channel to change provider",
@@ -469,6 +498,76 @@ pub async fn retry_delivery(
         ));
     }
     Ok(Json(json!({"ok":true})))
+}
+pub async fn send_email(a: &App, address: &str, p: &Value) -> Result<()> {
+    let host = std::env::var("SMTP_HOST").map_err(|_| bad("SMTP is not configured"))?;
+    let from = std::env::var("SMTP_FROM").map_err(|_| bad("SMTP sender is not configured"))?;
+    let port = std::env::var("SMTP_PORT").ok().and_then(|s| s.parse::<u16>().ok()).unwrap_or(587);
+    if host.trim().is_empty() || port == 0 || !email_address(&from) || !email_address(address) {
+        return Err(bad("SMTP host or port is invalid"));
+    }
+    let stream = TcpStream::connect((host.as_str(), port)).await.map_err(|_| bad("SMTP connection failed"))?;
+    let mut connection = BufReader::new(stream);
+    smtp_reply(&mut connection, 220).await?;
+    connection.get_mut().write_all(b"EHLO aegis-monitor\r\n").await.map_err(|_| bad("SMTP write failed"))?;
+    let capabilities = smtp_reply(&mut connection, 250).await?;
+    if !capabilities.to_ascii_uppercase().contains("STARTTLS") {
+        return Err(bad("SMTP server does not offer STARTTLS"));
+    }
+    connection.get_mut().write_all(b"STARTTLS\r\n").await.map_err(|_| bad("SMTP write failed"))?;
+    smtp_reply(&mut connection, 220).await?;
+    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+    let name = ServerName::try_from(host.clone()).map_err(|_| bad("SMTP host is invalid"))?;
+    let tls = TlsConnector::from(std::sync::Arc::new(config)).connect(name, connection.into_inner()).await.map_err(|_| bad("SMTP TLS failed"))?;
+    let mut connection = BufReader::new(tls);
+    connection.get_mut().write_all(b"EHLO aegis-monitor\r\n").await.map_err(|_| bad("SMTP write failed"))?;
+    smtp_reply(&mut connection, 250).await?;
+    let user = std::env::var("SMTP_USERNAME").unwrap_or_default();
+    let password = std::env::var("SMTP_PASSWORD").unwrap_or_default();
+    if !user.is_empty() {
+        let auth = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, format!("\0{user}\0{password}"));
+        connection.get_mut().write_all(format!("AUTH PLAIN {auth}\r\n").as_bytes()).await.map_err(|_| bad("SMTP write failed"))?;
+        smtp_reply(&mut connection, 235).await?;
+    }
+    for (command, expected) in [
+        (format!("MAIL FROM:<{from}>\r\n"), 250),
+        (format!("RCPT TO:<{address}>\r\n"), 250),
+        ("DATA\r\n".to_string(), 354),
+    ] {
+        connection.get_mut().write_all(command.as_bytes()).await.map_err(|_| bad("SMTP write failed"))?;
+        smtp_reply(&mut connection, expected).await?;
+    }
+    let subject = format!("{}: {} - {}", a.brand, p["state"].as_str().unwrap_or("UPDATE"), p["name"].as_str().unwrap_or("Monitor"))
+        .replace('\r', " ").replace('\n', " ");
+    let subject = if subject.is_ascii() { subject } else {
+        format!("=?UTF-8?B?{}?=", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, subject))
+    };
+    let body = format!("{}\n\nStatus: {}\nReason: {}\nDuration: {}\n\n{}", p["name"].as_str().unwrap_or("Monitor"), p["state"].as_str().unwrap_or("UPDATE"), p["reason"].as_str().unwrap_or(""), p["duration"].as_str().unwrap_or(""), p["url"].as_str().unwrap_or(""));
+    let body = body.replace("\r\n", "\n").replace('\r', "\n");
+    let escaped = body.split('\n').map(|line| if line.starts_with('.') { format!(".{line}") } else { line.to_string() }).collect::<Vec<_>>().join("\r\n");
+    let message = format!("From: <{from}>\r\nTo: <{address}>\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{escaped}\r\n.\r\n");
+    connection.get_mut().write_all(message.as_bytes()).await.map_err(|_| bad("SMTP write failed"))?;
+    smtp_reply(&mut connection, 250).await?;
+    let _ = connection.get_mut().write_all(b"QUIT\r\n").await;
+    Ok(())
+}
+async fn smtp_reply<T: tokio::io::AsyncRead + Unpin>(stream: &mut BufReader<T>, expected: u16) -> Result<String> {
+    let mut result = String::new();
+    for _ in 0..20 {
+        let mut line = String::new();
+        let bytes = stream.read_line(&mut line).await.map_err(|_| bad("SMTP read failed"))?;
+        if bytes == 0 || bytes > 2048 || result.len() + bytes > 8192 || line.len() < 4 {
+            return Err(bad("SMTP reply is invalid"));
+        }
+        let code = line.get(..3).and_then(|value| value.parse::<u16>().ok()).ok_or_else(|| bad("SMTP reply is invalid"))?;
+        if code != expected { return Err(bad("SMTP server rejected request")); }
+        let done = line.as_bytes()[3] == b' ';
+        result.push_str(&line);
+        if done { return Ok(result); }
+        if line.as_bytes()[3] != b'-' { return Err(bad("SMTP reply is invalid")); }
+    }
+    Err(bad("SMTP reply is too long"))
 }
 #[cfg(test)]
 mod tests {

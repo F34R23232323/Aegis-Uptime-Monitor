@@ -9,6 +9,7 @@
 </script>
 
 <script lang="ts">
+	import { customSelect } from './customSelect';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -90,6 +91,7 @@
 	let fatal = $state('');
 	let monitors = $state<Monitor[]>([]);
 	let monitorOffset = $state(0);
+	let monitorPageTotal = $state(0);
 	let monitorCounts = $state<{ total: number; states: Record<string, number>; open_incidents: number }>({
 		total: 0,
 		states: {},
@@ -128,6 +130,8 @@
 	let eventSource: EventSource | undefined;
 	let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let toastTimer: ReturnType<typeof setTimeout> | undefined;
+	let monitorSearchTimer: ReturnType<typeof setTimeout> | undefined;
+	let refreshSequence = 0;
 	const nav = [
 		{ path: '/', label: 'Overview', icon: LayoutDashboard },
 		{ path: '/monitors', label: 'Monitors', icon: Radio },
@@ -220,15 +224,26 @@
 		};
 	}
 	async function refresh() {
+		const sequence = ++refreshSequence;
 		if (route === '/') monitorOffset = 0;
+		const query = new URLSearchParams({ limit: '500', offset: String(monitorOffset) });
+		if (route === '/monitors') {
+			if (search.trim()) query.set('q', search.trim());
+			if (filter !== 'all') query.set('state', filter);
+			if (typeFilter !== 'all') query.set('kind', typeFilter);
+		}
 		const values = await Promise.all([
-			api<Monitor[]>(`/monitors?limit=500&offset=${monitorOffset}`),
+			api<Monitor[]>(`/monitors?${query}`),
 			api<Incident[]>('/incidents'),
 			api<Server[]>('/servers'),
 			api<Page[]>('/status-pages')
 		]);
+		if (sequence !== refreshSequence) return;
 		[monitors, incidents, servers, pages] = values;
 		monitorCounts = await api('/monitors/counts');
+		monitorPageTotal = route === '/monitors'
+			? (await api<{ total: number }>(`/monitors/search-count?${query}`)).total
+			: monitorCounts.total;
 
 		const data = await api<{ id: string; checks: Sample[]; uptime: Uptime }[]>(
 			'/monitors/summaries?days=' + analyticsDays
@@ -243,6 +258,17 @@
 			Promise.all([1, 7, 30, 90].map((d) => api<Uptime>(`/monitors/${id}/uptime?days=${d}`)))
 		]);
 	}
+	$effect(() => {
+		if (route !== '/monitors' || !user) return;
+		void search;
+		void filter;
+		void typeFilter;
+		clearTimeout(monitorSearchTimer);
+		monitorSearchTimer = setTimeout(() => {
+			monitorOffset = 0;
+			void refresh().catch((e) => notify(e.message));
+		}, 250);
+	});
 	$effect(() => {
 		if (detail?.id && user) void loadDetail(detail.id).catch((e) => notify(e.message));
 	});
@@ -270,6 +296,7 @@
 			clearInterval(fallback);
 			clearTimeout(refreshTimer);
 			clearTimeout(toastTimer);
+			clearTimeout(monitorSearchTimer);
 			window.removeEventListener('keydown', key);
 		};
 	});
@@ -559,7 +586,7 @@
 					<div class="section-heading">
 						<div class="section-title">
 							<h2>{route === '/' ? 'Monitor overview' : 'All monitors'}</h2>
-							<span class="count-badge">{monitors.length}</span>
+							<span class="count-badge">{route === '/monitors' ? monitorPageTotal : monitors.length}</span>
 						</div>
 						<div class="section-tools">
 							{#if route === '/'}<a class="subtle-link" href="/monitors"
@@ -569,9 +596,9 @@
 								>{/if}
 						</div>
 					</div>
-					{#if monitorCounts.total > 500}<div class="notice">
-							Showing monitors {monitorOffset + 1}–{monitorOffset + monitors.length} of {monitorCounts.total}.
-							Search and filters apply to this page; global health counts include every monitor.
+					{#if monitorPageTotal > 500}<div class="notice">
+							Showing monitors {monitorOffset + 1}–{monitorOffset + monitors.length} of {monitorPageTotal} matching monitors.
+							Global health counts include every monitor.
 						</div>{/if}
 					<section class="panel monitor-panel">
 						<div class="monitor-toolbar">
@@ -591,7 +618,7 @@
 										aria-label="Search monitors"
 									/>
 								</div>
-								<select class="type-filter" aria-label="Filter by monitor type" bind:value={typeFilter}
+								<select use:customSelect class="type-filter" aria-label="Filter by monitor type" bind:value={typeFilter}
 									><option value="all">All types</option
 									>{#each ['http', 'json', 'tcp', 'dns', 'tls', 'redis', 'smtp', 'postgres', 'push', 'docker', 'pm2', 'host', 'cpu', 'memory', 'disk'] as t}<option
 											value={t}>{t.toUpperCase()}</option
@@ -599,7 +626,7 @@
 								>
 							</div>
 						</div>
-						{#if !monitors.length}<div class="empty-state">
+						{#if !monitors.length && monitorPageTotal === 0 && !search && filter === 'all' && typeFilter === 'all'}<div class="empty-state">
 								<div class="empty-icon"><Radio size={29} /></div>
 								<h3>Give your services a watchful eye.</h3>
 								<p>
@@ -694,7 +721,7 @@
 								>UTC storage · local display</span
 							>
 						</div>
-						{#if route === '/monitors' && monitorCounts.total > 500}<div class="panel-footer">
+					{#if route === '/monitors' && monitorPageTotal > 500}<div class="panel-footer">
 								<button
 									class="button"
 									disabled={monitorOffset === 0}
@@ -704,11 +731,11 @@
 									}}>Newer</button
 								>
 								<span
-									>Page {Math.floor(monitorOffset / 500) + 1} of {Math.ceil(monitorCounts.total / 500)}</span
+									>Page {Math.floor(monitorOffset / 500) + 1} of {Math.ceil(monitorPageTotal / 500)}</span
 								>
 								<button
 									class="button"
-									disabled={monitorOffset + monitors.length >= monitorCounts.total}
+									disabled={monitorOffset + monitors.length >= monitorPageTotal}
 									onclick={() => {
 										monitorOffset += 500;
 										void refresh();
@@ -976,7 +1003,7 @@
 								Real observations over time. Unknown and paused periods never count as uptime.
 							</p>
 						</div>
-						<select aria-label="Analytics period" bind:value={analyticsDays} onchange={() => void refresh()}
+						<select use:customSelect aria-label="Analytics period" bind:value={analyticsDays} onchange={() => void refresh()}
 							><option value={1}>24 hours</option><option value={7}>7 days</option><option value={30}
 								>30 days</option
 							><option value={90}>90 days</option></select
@@ -1166,7 +1193,7 @@
 											bind:value={memberPassword}
 										/></label
 									><label
-										>Role<select bind:value={memberRole}
+										>Role<select use:customSelect bind:value={memberRole}
 											><option value="viewer">Viewer</option><option value="admin">Admin</option></select
 										></label
 									><button class="button primary" disabled={busy}>Add member</button>
@@ -1194,6 +1221,7 @@
 		>{#if addOpen}<MonitorForm
 				monitor={editing}
 				{servers}
+				{monitors}
 				onsave={() => void saved()}
 				onmessage={notify}
 			/>{/if}</Modal

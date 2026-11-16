@@ -16,6 +16,7 @@ export interface Monitor {
 	tags: string[];
 	public: boolean;
 	server_id: string | null;
+	depends_on: string | null;
 	config: Record<string, unknown>;
 	last_latency: number | null;
 	last_error: string | null;
@@ -93,10 +94,19 @@ export interface Channel {
 	events: string[];
 	monitor_ids: string[];
 	cooldown_seconds: number;
+	quiet_start_minute: number | null;
+	quiet_end_minute: number | null;
+	delay_seconds: number;
 	id: string;
 	name: string;
 	provider: string;
 	enabled: boolean;
+}
+export interface HostMetricSample {
+	bucket: string;
+	cpu_percent: number | null;
+	memory_percent: number | null;
+	disk_percent: number | null;
 }
 export interface Delivery {
 	id: string;
@@ -115,6 +125,8 @@ export interface Page {
 	theme: 'dark' | 'light' | 'auto';
 	logo_url: string;
 	support_url: string;
+	support_label: string;
+	footer_text: string;
 	announcement: string;
 	id: string;
 	slug: string;

@@ -160,7 +160,7 @@
 			>
 			<div class="public-header-actions">
 				{#if data.support_url}<a href={data.support_url} target="_blank" rel="noreferrer" class="subtle-link"
-						>Contact support <ExternalLink size={12} /></a
+						>{data.support_label || 'Contact support'} <ExternalLink size={12} /></a
 					>{/if}<a
 					href={'/api/v1/public/status/' + data.slug + '/feed'}
 					class="icon-button"
@@ -449,7 +449,7 @@
 			<RefreshCw size={12} /> Last verified {time(updated)} · Refreshes every 30 seconds · Times shown in {timezone}
 		</div>
 		<footer class="public-footer">
-			<span><ShieldCheck size={14} /> Independently monitored</span><span>Powered by {data.brand}</span>
+			<span><ShieldCheck size={14} /> {data.footer_text || 'Independently monitored'}</span><span>Powered by {data.brand}</span>
 		</footer>
 	</main>
 </div>

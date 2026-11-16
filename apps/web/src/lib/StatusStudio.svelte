@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { customSelect } from './customSelect';
 	import { onMount } from 'svelte';
 	import {
 		Plus,
@@ -58,10 +59,13 @@
 	});
 	let logo = $state('');
 	let support = $state('');
+	let supportLabel = $state('Contact support');
+	let footerText = $state('');
 	let announcement = $state('');
 	let selectedResources = $state<string[]>([]);
 	let selectedMonitors = $state<string[]>([]);
 	let tabs = $state<StatusTab[]>(defaultTabs.map((tab) => ({ ...tab })));
+	let previewTab = $state('overview');
 	async function load() {
 		try {
 			[pages, resources, monitors] = await Promise.all([
@@ -110,10 +114,13 @@
 		};
 		logo = p?.logo_url || '';
 		support = p?.support_url || '';
+		supportLabel = p?.support_label || 'Contact support';
+		footerText = p?.footer_text || '';
 		announcement = p?.announcement || '';
 		selectedResources = [...(p?.resource_ids || [])];
 		selectedMonitors = [...(p?.monitor_ids || [])];
 		tabs = (p?.tabs || defaultTabs).map((tab) => ({ ...tab }));
+		previewTab = tabs[0]?.id || 'overview';
 		error = '';
 		pageOpen = true;
 	}
@@ -156,6 +163,8 @@
 				metrics_settings: metricsSettings,
 				logo_url: logo,
 				support_url: support,
+				support_label: supportLabel,
+				footer_text: footerText,
 				announcement,
 				resource_ids: selectedResources,
 				monitor_ids: selectedMonitors,
@@ -391,7 +400,7 @@
 			</div>
 		</fieldset>
 		<label
-			>Published resource status<select bind:value={override}
+			>Published resource status<select use:customSelect bind:value={override}
 				><option value="automatic">Automatic — derive from linked monitors</option
 				>{#each resourceStates as state}<option value={state.value}>{state.label} — manual override</option
 					>{/each}</select
@@ -422,6 +431,29 @@
 	title={pageId ? 'Edit status page' : 'Create a status page'}
 	description="Choose what visitors see, then open the published page to review it."
 	><form class="form-stack" onsubmit={savePage}>
+		<section class="status-editor-preview" aria-label="Live status page preview">
+			<div class="status-preview" class:light={theme === 'light'} style={`--page-accent:${accent}`}>
+				<div class="preview-top">
+					<span class="preview-mark"><ShieldCheck size={22} /></span>
+					<span class="preview-url">/status/{slug || 'your-page'}</span>
+				</div>
+				{#if announcement}<div class="status-editor-announcement">{announcement}</div>{/if}
+				<h3>{title || 'Your status page'}</h3>
+				<p class="preview-description">{description || 'Describe the services on this page.'}</p>
+				<div class="page-tab-preview">
+					{#each tabs as tab}<button type="button" class:chosen={previewTab === tab.id} onclick={() => (previewTab = tab.id)}>{tab.label || 'Untitled tab'}</button>{/each}
+				</div>
+				{#if tabs.find((tab) => tab.id === previewTab)?.kind === 'text'}
+					<p class="preview-description">{tabs.find((tab) => tab.id === previewTab)?.body || 'Add text to this tab.'}</p>
+				{:else}
+					{#each selectedResources as id}<div class="preview-service"><span class="preview-service-mark"></span>{resources.find((r) => r.id === id)?.name || 'Removed resource'}</div>{/each}
+					{#each selectedMonitors as id}<div class="preview-service"><span class="preview-service-mark"></span>{monitors.find((m) => m.id === id)?.name || 'Removed monitor'}</div>{/each}
+				{/if}
+				{#if support}<p class="preview-description">{supportLabel} ↗</p>{/if}
+				{#if footerText}<p class="preview-description">{footerText}</p>{/if}
+			</div>
+			<p class="muted small-text">Draft preview of appearance and content. Save and open the page to review live health, incidents, and graphs.</p>
+		</section>
 		<div class="editor-intro">
 			<span>01 / IDENTITY</span>
 			<p>Give visitors a recognizable page and a short explanation of what it covers.</p>
@@ -442,7 +474,7 @@
 		<label>Description<textarea bind:value={description} maxlength="2000"></textarea></label>
 		<div class="form-row">
 			<label>Accent color<input type="color" bind:value={accent} /></label><label
-				>Theme<select bind:value={theme}
+				>Theme<select use:customSelect bind:value={theme}
 					><option value="dark">Dark</option><option value="light">Light</option><option value="auto"
 						>System preference</option
 					></select
@@ -450,7 +482,7 @@
 			>
 		</div>
 		<label
-			>Page layout<select bind:value={layout}
+			>Page layout<select use:customSelect bind:value={layout}
 				><option value="standard">Standard service status</option><option value="provider"
 					>Provider components</option
 				></select
@@ -461,6 +493,8 @@
 				>Support HTTPS URL<input type="url" bind:value={support} placeholder="https://…" /></label
 			>
 		</div>
+		<label>Support link label<input bind:value={supportLabel} required maxlength="60" /></label>
+		<label>Footer text<textarea bind:value={footerText} maxlength="500" placeholder="Optional public footer note"></textarea></label>
 		<label
 			>Announcement banner<textarea
 				bind:value={announcement}
@@ -540,7 +574,7 @@
 		{#each tabs as tab, i}<div class="editor-field">
 				<div class="form-row">
 					<label>Tab label<input bind:value={tab.label} maxlength="40" required /></label><label
-						>Content<select bind:value={tab.kind}
+						>Content<select use:customSelect bind:value={tab.kind}
 							><option value="overview">Service overview</option><option value="incidents"
 								>Incident history</option
 							><option value="maintenance">Planned maintenance</option><option value="metrics"
@@ -610,7 +644,7 @@
 			>
 			<div class="form-row">
 				<label
-					>Response samples<select bind:value={metricsSettings.latency_samples}
+					>Response samples<select use:customSelect bind:value={metricsSettings.latency_samples}
 						><option value={60}>Latest 60</option><option value={120}>Latest 120</option><option value={240}
 							>Latest 240</option
 						></select

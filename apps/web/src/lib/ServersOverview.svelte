@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { customSelect } from './customSelect';
 	import {
 		Activity,
 		Check,
@@ -13,7 +14,8 @@
 		Trash2
 	} from '@lucide/svelte';
 	import Status from './Status.svelte';
-	import { relative, type Monitor, type Server, type Service } from './api';
+	import HostMetricChart from './HostMetricChart.svelte';
+	import { api, relative, type HostMetricSample, type Monitor, type Server, type Service } from './api';
 
 	let {
 		servers,
@@ -35,6 +37,9 @@
 	let stateFilter = $state<'all' | 'online' | 'offline'>('all');
 	let sort = $state<'name' | 'cpu' | 'memory'>('name');
 	let expanded = $state<Record<string, boolean>>({});
+	let metricHistory = $state<Record<string, HostMetricSample[]>>({});
+	let metricDays = $state<Record<string, number>>({});
+	let metricError = $state<Record<string, string>>({});
 	let serviceQueries = $state<Record<string, string>>({});
 	let serviceTabs = $state<Record<string, 'all' | 'docker' | 'pm2'>>({});
 
@@ -48,6 +53,16 @@
 		monitors.some((monitor) => monitor.server_id === server.id && monitor.target === item.id);
 	const usage = (value: number) => Math.min(100, Math.max(0, Number.isFinite(value) ? value : 0));
 	const gb = (value: number) => (value / 1073741824).toFixed(1);
+	async function loadMetrics(id: string, days = 1) {
+		metricDays[id] = days;
+		metricError[id] = '';
+		try { metricHistory[id] = await api<HostMetricSample[]>(`/servers/${id}/metrics?days=${days}`); }
+		catch (e) { metricError[id] = (e as Error).message; }
+	}
+	function toggleServer(id: string) {
+		expanded[id] = !expanded[id];
+		if (expanded[id] && !metricHistory[id]) void loadMetrics(id);
+	}
 	let onlineCount = $derived(servers.filter(online).length);
 	let allServices = $derived(servers.flatMap(services));
 	let healthyCount = $derived(allServices.filter(({ item }) => item.healthy).length);
@@ -142,7 +157,7 @@
 					>{option === 'all' ? 'All' : option === 'online' ? 'Online' : 'Offline'}</button
 				>{/each}
 		</div>
-		<select aria-label="Sort servers" bind:value={sort}
+		<select use:customSelect aria-label="Sort servers" bind:value={sort}
 			><option value="name">Name A–Z</option><option value="cpu">Highest CPU</option><option value="memory"
 				>Highest memory</option
 			></select
@@ -166,7 +181,7 @@
 						class="fleet-server-toggle"
 						aria-label={`${expanded[server.id] ? 'Collapse' : 'Expand'} ${server.name}`}
 						aria-expanded={!!expanded[server.id]}
-						onclick={() => (expanded[server.id] = !expanded[server.id])}
+						onclick={() => toggleServer(server.id)}
 						><ChevronDown size={17} class={expanded[server.id] ? 'turned' : ''} /></button
 					>
 					<div class="fleet-server-icon"><ServerIcon size={19} /></div>
@@ -205,6 +220,8 @@
 				</div>
 				{#if expanded[server.id]}
 					<div class="fleet-server-detail">
+						<div class="row-between"><h3>Host resource history</h3><div class="button-group">{#each [1, 7, 30] as days}<button type="button" class="button small" class:chosen={(metricDays[server.id] || 1) === days} onclick={() => void loadMetrics(server.id, days)}>{days === 1 ? '24h' : `${days}d`}</button>{/each}</div></div>
+						{#if metricError[server.id]}<p class="error" role="alert">{metricError[server.id]}</p>{:else}<HostMetricChart samples={metricHistory[server.id] || []} />{/if}
 						{#if host}
 							<div class="fleet-host-stats">
 								<span>Load <strong>{host.load.toFixed(2)}</strong></span><span

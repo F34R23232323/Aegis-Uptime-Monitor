@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { customSelect } from './customSelect';
 	import { onMount } from 'svelte';
 	import { Plus, Bell, Pencil, Trash2, RefreshCw, Send, RotateCcw, Eye, Radio } from '@lucide/svelte';
 	import {
@@ -29,6 +30,9 @@
 	let allMonitors = $state(true);
 	let monitorSearch = $state('');
 	let cooldown = $state(0);
+	let quietStart = $state('');
+	let quietEnd = $state('');
+	let delay = $state(0);
 	let previewEvent = $state('DOWN');
 	let payload = $state<DiscordPayload | null>(null);
 	let error = $state('');
@@ -76,6 +80,9 @@
 		allMonitors = !monitorId && !routes.length;
 		monitorSearch = '';
 		cooldown = c?.cooldown_seconds || 0;
+		quietStart = c?.quiet_start_minute == null ? '' : `${String(Math.floor(c.quiet_start_minute / 60)).padStart(2, '0')}:${String(c.quiet_start_minute % 60).padStart(2, '0')}`;
+		quietEnd = c?.quiet_end_minute == null ? '' : `${String(Math.floor(c.quiet_end_minute / 60)).padStart(2, '0')}:${String(c.quiet_end_minute % 60).padStart(2, '0')}`;
+		delay = c?.delay_seconds || 0;
 		payload = null;
 		error = '';
 		open = true;
@@ -91,6 +98,7 @@
 	}
 	async function save(e: SubmitEvent) {
 		e.preventDefault();
+		if (Boolean(quietStart) !== Boolean(quietEnd)) { error = 'Set both quiet-hour times or clear both.'; return; }
 		busy = true;
 		error = '';
 		try {
@@ -102,7 +110,10 @@
 				template,
 				events,
 				monitor_ids: allMonitors ? [] : routes,
-				cooldown_seconds: cooldown
+				cooldown_seconds: cooldown,
+				quiet_start_minute: quietStart ? Number(quietStart.slice(0, 2)) * 60 + Number(quietStart.slice(3)) : null,
+				quiet_end_minute: quietEnd ? Number(quietEnd.slice(0, 2)) * 60 + Number(quietEnd.slice(3)) : null,
+				delay_seconds: delay
 			});
 			open = false;
 			secret = '';
@@ -168,7 +179,7 @@
 					</div>
 					<h2>{c.name}</h2>
 					<p class="muted">
-						{c.provider === 'discord' ? 'Discord embed' : 'Generic JSON webhook'} · Encrypted destination
+						{c.provider === 'discord' ? 'Discord embed' : c.provider === 'email' ? 'Email via SMTP' : 'Generic JSON webhook'} · Encrypted destination
 					</p>
 					<div class="channel-route-detail">
 						<span class="route-caption">Sends for</span>
@@ -253,18 +264,18 @@
 			<label
 				>Name<input bind:value={name} required maxlength="120" placeholder="Infrastructure alerts" /></label
 			><label
-				>Provider<select bind:value={provider} disabled={!!editing}
-					><option value="discord">Discord</option><option value="webhook">Generic webhook</option></select
+				>Provider<select use:customSelect bind:value={provider} disabled={!!editing}
+					><option value="discord">Discord</option><option value="webhook">Generic webhook</option><option value="email">Email</option></select
 				></label
 			>
 		</div>
 		<label
-			>{editing ? 'Replace webhook URL (leave blank to keep)' : 'Webhook URL'}<input
-				type="password"
+			>{editing ? 'Replace destination (leave blank to keep)' : provider === 'email' ? 'Recipient email address' : 'Webhook URL'}<input
+				type={provider === 'email' ? 'email' : 'password'}
 				autocomplete="off"
 				bind:value={secret}
 				required={!editing}
-				placeholder={provider === 'discord'
+				placeholder={provider === 'email' ? 'alerts@example.com' : provider === 'discord'
 					? 'https://discord.com/api/webhooks/…'
 					: 'https://hooks.example.com/…'}
 			/></label
@@ -291,6 +302,10 @@
 			<p class="muted small-text">
 				Suppress repeated DOWN alerts for the same monitor during a cooldown. Recoveries still notify.
 			</p>
+			<div class="form-row"><label>Quiet hours start (UTC)<input type="time" bind:value={quietStart} /></label><label>Quiet hours end (UTC)<input type="time" bind:value={quietEnd} /></label></div>
+			<p class="muted small-text">During quiet hours, queued alerts wait until the end time. Test messages bypass quiet hours.</p>
+			<label>DOWN escalation delay (seconds)<input type="number" bind:value={delay} min="0" max="86400" /></label>
+			<p class="muted small-text">To escalate, add a second channel with a delay. Pending DOWN messages are cancelled when the incident recovers.</p>
 		</fieldset>
 		{#if provider === 'discord'}<details open>
 				<summary>Discord message designer</summary>
@@ -370,7 +385,7 @@
 						</div>{/each}
 					<div class="row-between">
 						<label
-							>Preview event<select bind:value={previewEvent}
+							>Preview event<select use:customSelect bind:value={previewEvent}
 								><option>DOWN</option><option>RECOVERED</option><option>DEGRADED</option><option>TEST</option
 								></select
 							></label

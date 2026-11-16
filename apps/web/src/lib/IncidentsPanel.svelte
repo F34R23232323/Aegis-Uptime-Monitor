@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { customSelect } from './customSelect';
 	import { onMount } from 'svelte';
 	import {
 		Plus,
@@ -223,13 +224,13 @@
 		>
 		<div class="form-row">
 			<label
-				>Severity<select bind:value={severity}
+				>Severity<select use:customSelect bind:value={severity}
 					><option value="minor">Minor</option><option value="major">Major</option><option value="critical"
 						>Critical</option
 					></select
 				></label
 			><label
-				>Phase<select bind:value={phase}
+				>Phase<select use:customSelect bind:value={phase}
 					><option value="investigating">Investigating</option><option value="identified">Identified</option
 					><option value="monitoring">Monitoring</option><option value="resolved">Resolved</option></select
 				></label
@@ -290,7 +291,7 @@
 		: 'This update remains private until the incident is published.'}
 	><form class="form-stack" onsubmit={postUpdate}>
 		<label
-			>Phase<select bind:value={phase}
+			>Phase<select use:customSelect bind:value={phase}
 				><option value="investigating">Investigating</option><option value="identified">Identified</option
 				><option value="monitoring">Monitoring</option><option value="resolved">Resolved</option></select
 			></label

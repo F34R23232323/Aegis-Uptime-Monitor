@@ -18,7 +18,7 @@ Rust checks and agents · PostgreSQL history · SvelteKit dashboard · Public st
 | | |
 | --- | --- |
 | **Checks** | HTTP/HTTPS, JSON API, TCP, DNS, TLS, Redis PING, SMTP greeting, PostgreSQL handshake, push heartbeats, Docker, PM2 and host resource checks |
-| **Alerts** | Durable Discord and JSON webhook deliveries with routing, retries and cooldowns |
+| **Alerts** | Durable Discord, JSON webhook and SMTP email deliveries with routing, retries and cooldowns |
 | **Status** | Public-safe resources, branded status pages, incidents, maintenance, uptime and RSS |
 | **Host** | Linux with Docker Engine and Compose 2.24.4+; production HTTPS through Caddy |
 | **Storage** | PostgreSQL 17; no Redis service required |
@@ -126,6 +126,7 @@ Existing installations need a database and matching encryption-key backup before
 - TCP, DNS (A, AAAA, CNAME, MX, TXT, NS, SRV), TLS certificate/expiry, Redis PING, SMTP greeting and PostgreSQL SSL negotiation probes. The fixed protocol probes test reachability or handshake, not a database query or email delivery.
 - Push heartbeats with one-time secret URLs for cron jobs and external tasks. Keep push URLs out of source control and shared logs.
 - Failure and recovery thresholds, bounded retries, pause, maintenance, check history, latency and coverage-aware uptime. Unknown time is not shown as 100% uptime.
+- Optional monitor dependencies defer child DOWN notifications while their parent monitor is DOWN; child incidents and measured checks remain visible.
 - Raw-check retention is configurable per monitor from 7 to 365 days; the default is 90 days.
 
 </details>
@@ -133,7 +134,7 @@ Existing installations need a database and matching encryption-key backup before
 <details>
 <summary><strong>Servers, Docker and PM2</strong></summary>
 
-- Outbound Rust agents report host CPU, memory, disk and network snapshots. They need outbound HTTPS to Aegis, not an inbound port.
+- Outbound Rust agents report host CPU, memory, disk and network snapshots. CPU, memory and disk percentages are stored in five-minute buckets for history charts. They need outbound HTTPS to Aegis, not an inbound port.
 - Optional Docker and PM2 discovery. Choose individual services or host health to create monitors; discovery alone does not generate checks or alerts.
 - Missing agent heartbeats affect associated monitors. A running container without a Docker HEALTHCHECK is only a liveness signal; add HTTP/TCP checks for application health.
 - Docker socket access is effectively host-level access, even with a read-only mount. See [agent deployment](deploy/agent-hetzner.md) and [safe Docker access](docs/operations.md#safe-docker-access).
@@ -143,7 +144,7 @@ Existing installations need a database and matching encryption-key backup before
 <details>
 <summary><strong>Notifications and incidents</strong></summary>
 
-- Discord embeds with validated templates, preview, event routing, monitor selection, mention controls and failure cooldowns; generic JSON webhooks are also supported.
+- Discord embeds with validated templates, preview, event routing, monitor selection, mention controls, failure cooldowns, UTC quiet hours and delayed DOWN escalation; generic JSON webhooks and SMTP email channels are also supported. Email delivery requires API-side `SMTP_HOST`, `SMTP_FROM` and optional SMTP credentials in `.env`.
 - **Send test** queues a real delivery. Saving a channel or previewing an embed does not send one.
 - Durable jobs retry provider failures across restarts. Delivery is at least once, so a crash at the wrong moment can repeat a provider message.
 - Automatic measured incidents stay private until you explicitly publish safe editorial text to a selected status page.
@@ -154,7 +155,7 @@ Existing installations need a database and matching encryption-key backup before
 <summary><strong>Public status pages</strong></summary>
 
 - Public-safe resources can combine eligible monitors, use manual status overrides with reasons and expiry, and show measured uptime only where evidence exists.
-- Brand pages with a slug, theme, accent, logo, support link, announcement and ordered Overview, Incidents, Maintenance, Metrics or plain-text tabs.
+- Brand pages with a slug, theme, accent, logo, labeled support link, announcement, optional footer and ordered Overview, Incidents, Maintenance, Metrics or plain-text tabs. The editor shows a live draft preview of page appearance and selected content.
 - Publish incident updates and maintenance notices selectively. Public pages exclude targets, credentials, raw errors, private notes and host inventory.
 - Server-rendered page: `/status/<slug>`. RSS feed: `/api/v1/public/status/<slug>/feed`.
 - Premade component choices are available for several public provider status feeds. Provider-reported status can lag or differ from local availability; see the [scope and limitations](docs/limitations.md).

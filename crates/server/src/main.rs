@@ -260,6 +260,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/monitors/test", post(api::test_monitor))
         .route("/monitors/summaries", get(api::summaries))
         .route("/monitors/counts", get(api::counts))
+        .route("/monitors/search-count", get(api::monitor_search_count))
         .route(
             "/incidents",
             get(status::incidents).post(status::create_incident),
@@ -280,6 +281,7 @@ pub fn router(app: Arc<App>) -> Router {
         )
         .route("/audit", get(status::audit_log))
         .route("/servers", get(api::servers).post(api::create_server))
+        .route("/servers/{id}/metrics", get(api::server_metrics))
         .route("/servers/{id}", delete(api::delete_server))
         .route("/servers/{id}/rotate", post(api::rotate_server))
         .route(

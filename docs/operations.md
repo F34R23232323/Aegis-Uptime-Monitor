@@ -16,6 +16,7 @@
 | ALLOW_PRIVATE_TARGETS | false | Explicit admin networking capability for LAN/loopback targets |
 | CHECK_WORKERS | 16, clamped 1–128 | Maximum batch concurrency |
 | METRICS_TOKEN | unset | 32+ character bearer token enables internal `/metrics` Prometheus gauge endpoint |
+| SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM | unset, 587 | Optional STARTTLS email notification submission; set HOST and FROM to enable email delivery, and keep PASSWORD private |
 | API_BIND | 0.0.0.0:3001 | API listen socket; native reverse-proxy installs should use 127.0.0.1:3001 |
 | RUST_LOG | info | Structured tracing filter; avoid HTTP body/credential logging |
 | PORT | 8080 | Loopback gateway port |

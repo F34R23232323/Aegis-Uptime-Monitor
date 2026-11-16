@@ -54,6 +54,8 @@ export interface PublicPage {
 	theme: 'dark' | 'light' | 'auto';
 	logo_url: string;
 	support_url: string;
+	support_label: string;
+	footer_text: string;
 	announcement: string;
 	tabs: StatusTab[];
 	resources: PublicResource[];

@@ -32,11 +32,11 @@ If the directory is not yet a Git repository, initialize it only when the task a
 | `crates/server/src/api.rs` | Monitor/server/agent/push APIs, private queries and metrics |
 | `crates/server/src/engine.rs` | Scheduler, observation recording, incidents, alert queue and pruning |
 | `crates/server/src/credentials.rs` | Monitor credential validation and use |
-| `crates/server/src/notifications.rs` | Channels, Discord templates, preview, delivery and retries |
+| `crates/server/src/notifications.rs` | Channels, Discord templates, SMTP delivery, preview and retries |
 | `crates/server/src/status.rs` | Resources, public pages, editorial incidents, maintenance and audit |
 | `crates/server/src/integration.rs` | PostgreSQL-backed API and state integration tests |
 | `crates/agent/src/main.rs` | Outbound heartbeat, host metrics, Docker and PM2 inventory |
-| `migrations/` | Versioned SQLx PostgreSQL schema; four migrations currently exist |
+| `migrations/` | Versioned SQLx PostgreSQL schema; nine migrations currently exist |
 | `apps/web/src/lib/App.svelte` | Authenticated workspace shell, navigation and data refresh |
 | `apps/web/src/lib/api.ts`, `public.ts` | Browser API contracts and public-page types/helpers |
 | `apps/web/src/lib/*.svelte` | Feature panels and shared UI |
@@ -73,11 +73,11 @@ Monitor interval, timeout, thresholds, retry, redirects, push grace and raw-chec
 
 ### Servers and outbound agents
 
-The Servers UI creates a server record and reveals enrollment credentials once. The agent sends periodic authenticated reports over HTTPS, with host metrics and optional Docker/PM2 inventory. Discovery does not create monitors automatically; the operator chooses what to monitor. Heartbeat freshness is separate from individual service health. For PM2, the agent service should run as the process owner with explicit PM2 homes and a binary path. Separate OS owners need separate agents/tokens. The isolated Compose agent does not have full host visibility. A server cannot reliably report its own total outage, so an independent observer is needed for that failure domain.
+The Servers UI creates a server record and reveals enrollment credentials once. The agent sends periodic authenticated reports over HTTPS, with host metrics and optional Docker/PM2 inventory. Host CPU, memory and disk percentages are retained in five-minute buckets for 90 days. Discovery does not create monitors automatically; the operator chooses what to monitor. Heartbeat freshness is separate from individual service health. For PM2, the agent service should run as the process owner with explicit PM2 homes and a binary path. Separate OS owners need separate agents/tokens. The isolated Compose agent does not have full host visibility. A server cannot reliably report its own total outage, so an independent observer is needed for that failure domain.
 
 ### Alerts and notification channels
 
-Notification channels support Discord webhooks and generic JSON webhooks. Discord templates have validated variables, editable embed fields, previews, event choices, explicit monitor routes and per-monitor DOWN cooldowns. Preview/save does not send a message; Send test queues actual delivery. Empty channel routes mean all monitors, and deleting the last explicitly routed monitor must not silently broaden a channel to all monitors. Recovery is eligible even when the DOWN cooldown is active. Jobs persist with template snapshots and retry after process restarts. A remote provider may receive a duplicate if the process crashes after provider acceptance but before DB acknowledgement.
+Notification channels support Discord webhooks, generic JSON webhooks and SMTP email to one address per channel. Email uses API-side STARTTLS settings from `.env`. Discord templates have validated variables, editable embed fields, previews, event choices, explicit monitor routes, per-monitor DOWN cooldowns, UTC quiet hours and delayed DOWN escalation. Monitor dependency relationships defer child DOWN deliveries while the direct parent monitor is DOWN; incidents still record. Preview/save does not send a message; Send test queues actual delivery. Empty channel routes mean all monitors, and deleting the last explicitly routed monitor must not silently broaden a channel to all monitors. Recovery is eligible even when the DOWN cooldown is active. Jobs persist with template snapshots and retry after process restarts. A remote provider may receive a duplicate if the process crashes after provider acceptance but before DB acknowledgement.
 
 ### Status resources, pages and incidents
 
@@ -124,6 +124,7 @@ Read `docs/operations.md` and `.env.example` for the full variable contract.
 | Database/crypto | `POSTGRES_PASSWORD`, `DATABASE_URL`, `ENCRYPTION_KEY` | Generate independent strong values; preserve the key with database backups |
 | Origin/setup | `APP_URL`, `APP_ENV`, `BOOTSTRAP_TOKEN`, `AEGIS_DOMAIN` | Exact origin; production requires HTTPS and first-owner token |
 | API/runtime | `API_BIND`, `CHECK_WORKERS`, `ALLOW_PRIVATE_TARGETS`, `METRICS_TOKEN`, `RUST_LOG` | Keep API private; private targets are opt-in; metrics token is secret |
+| Email | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` | Optional STARTTLS submission; keep credentials private |
 | Web/brand | `AEGIS_INTERNAL_API_URL`, `APP_NAME`, `APP_ACCENT`, `PORT` | Internal API is server-only; gateway is loopback by default |
 | Agent | `AEGIS_URL`, `AEGIS_AGENT_TOKEN`, `ALLOW_INSECURE_HTTP`, `AEGIS_DOCKER`, `AEGIS_PM2_HOMES`, `AEGIS_PM2_BINARY` | Outbound HTTPS by default; host adapters are operator-controlled |
 

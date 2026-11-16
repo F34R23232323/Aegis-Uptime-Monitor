@@ -212,9 +212,14 @@ pub struct PageInput {
     pub logo_url: String,
     #[serde(default)]
     pub support_url: String,
+    #[serde(default = "default_support_label")]
+    pub support_label: String,
     #[serde(default)]
     pub announcement: String,
+    #[serde(default)]
+    pub footer_text: String,
 }
+fn default_support_label() -> String { "Contact support".into() }
 fn default_layout() -> String {
     "standard".into()
 }
@@ -247,6 +252,8 @@ fn validate_page(p: &PageInput) -> Result<()> {
         || p.logo_url.len() > 2048
         || p.support_url.len() > 2048
         || p.announcement.len() > 1000
+        || p.support_label.trim().is_empty() || p.support_label.len() > 60
+        || p.footer_text.len() > 500
         || !["standard", "provider"].contains(&p.layout.as_str())
     {
         return Err(bad(
@@ -319,9 +326,9 @@ async fn save_page(a: &App, u: &User, id: Uuid, p: PageInput, create: bool) -> R
     validate_ids(&a.db, "status_resources", &p.resource_ids).await?;
     let mut tx = a.db.begin().await?;
     if create {
-        sqlx::query("INSERT INTO status_pages(id,slug,title,description,accent,monitor_ids,resource_ids,tabs,theme,logo_url,support_url,announcement,layout,metrics_settings) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO status_pages(id,slug,title,description,accent,monitor_ids,resource_ids,tabs,theme,logo_url,support_url,announcement,layout,metrics_settings,support_label,footer_text) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).bind(p.support_label).bind(p.footer_text).execute(&mut *tx).await?;
     } else {
-        let count=sqlx::query("UPDATE status_pages SET slug=$2,title=$3,description=$4,accent=$5,monitor_ids=$6,resource_ids=$7,tabs=$8,theme=$9,logo_url=$10,support_url=$11,announcement=$12,layout=$13,metrics_settings=$14,updated_at=now() WHERE id=$1").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).execute(&mut *tx).await?.rows_affected();
+        let count=sqlx::query("UPDATE status_pages SET slug=$2,title=$3,description=$4,accent=$5,monitor_ids=$6,resource_ids=$7,tabs=$8,theme=$9,logo_url=$10,support_url=$11,announcement=$12,layout=$13,metrics_settings=$14,support_label=$15,footer_text=$16,updated_at=now() WHERE id=$1").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).bind(p.support_label).bind(p.footer_text).execute(&mut *tx).await?.rows_affected();
         if count == 0 {
             return Err(Error(StatusCode::NOT_FOUND, "Status page not found".into()));
         }
@@ -537,7 +544,7 @@ async fn public_projection(a: &App, slug: &str) -> Result<Json<Value>> {
         );
     }
     Ok(Json(
-        json!({"title":page.get::<String,_>("title"),"slug":slug,"description":page.get::<String,_>("description"),"accent":page.get::<String,_>("accent"),"brand":a.brand,"theme":page.get::<String,_>("theme"),"logo_url":page.get::<String,_>("logo_url"),"support_url":page.get::<String,_>("support_url"),"announcement":page.get::<String,_>("announcement"),"tabs":page.get::<Value,_>("tabs"),"resources":resource_data,"monitors":monitors,"incidents":incidents,"maintenance":maintenance,"overall_state":overall_public(&overall),"layout":page.get::<String,_>("layout"),"metrics_settings":settings,"metrics_summary":{"uptime":summary_uptime,"latency":summary_latency},"generated_at":Utc::now()}),
+        json!({"title":page.get::<String,_>("title"),"slug":slug,"description":page.get::<String,_>("description"),"accent":page.get::<String,_>("accent"),"brand":a.brand,"theme":page.get::<String,_>("theme"),"logo_url":page.get::<String,_>("logo_url"),"support_url":page.get::<String,_>("support_url"),"support_label":page.get::<String,_>("support_label"),"footer_text":page.get::<String,_>("footer_text"),"announcement":page.get::<String,_>("announcement"),"tabs":page.get::<Value,_>("tabs"),"resources":resource_data,"monitors":monitors,"incidents":incidents,"maintenance":maintenance,"overall_state":overall_public(&overall),"layout":page.get::<String,_>("layout"),"metrics_settings":settings,"metrics_summary":{"uptime":summary_uptime,"latency":summary_latency},"generated_at":Utc::now()}),
     ))
 }
 

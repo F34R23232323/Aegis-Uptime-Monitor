@@ -7,6 +7,7 @@ pub struct MonitorRequest {
     pub monitor: MonitorInput,
     pub credentials: Option<HttpCredentials>,
     pub monitor_id: Option<uuid::Uuid>,
+    pub depends_on: Option<uuid::Uuid>,
 }
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]

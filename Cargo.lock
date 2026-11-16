@@ -75,11 +75,13 @@ dependencies = [
  "sqlx",
  "subtle",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tower",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "webpki-roots 1.0.12",
 ]
 
 [[package]]

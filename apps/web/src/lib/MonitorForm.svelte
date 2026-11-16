@@ -1,15 +1,18 @@
 <script lang="ts">
+	import { customSelect } from './customSelect';
 	import { untrack } from 'svelte';
 	import { Plus, Trash2, LockKeyhole } from '@lucide/svelte';
 	import { api, type Monitor, type Server } from './api';
 	let {
 		monitor,
 		servers = [],
+		monitors = [],
 		onsave,
 		onmessage
 	}: {
 		monitor?: Partial<Monitor>;
 		servers?: Server[];
+		monitors?: Monitor[];
 		onsave: () => void;
 		onmessage: (s: string) => void;
 	} = $props();
@@ -26,6 +29,7 @@
 	let description = $state(initial?.description || '');
 	let publicMonitor = $state(initial?.public || false);
 	let server = $state(initial?.server_id || '');
+	let dependsOn = $state(initial?.depends_on || '');
 	let method = $state(String(initial?.config?.method || 'GET'));
 	let status = $state(Number(initial?.config?.status || 200));
 	let keyword = $state(String(initial?.config?.keyword || ''));
@@ -140,6 +144,7 @@
 				.filter(Boolean),
 			public: publicMonitor,
 			server_id: agent ? server : null,
+			depends_on: dependsOn || null,
 			config,
 			credentials,
 			monitor_id: monitor?.id
@@ -202,13 +207,13 @@
 			><label
 				>Monitor type{#if monitor?.id}<span class="readonly-value"
 						>{types.find(([value]) => value === kind)?.[1] || kind}</span
-					>{:else}<select bind:value={kind}
+					>{:else}<select use:customSelect bind:value={kind}
 						>{#each types as [value, label]}<option {value}>{label}</option>{/each}</select
 					>{/if}</label
 			>
 		</div>
 		{#if agent}<label
-				>Enrolled server<select bind:value={server} required
+				>Enrolled server<select use:customSelect bind:value={server} required
 					><option value="">Select a server</option>{#each servers as s}<option value={s.id}>{s.name}</option
 						>{/each}</select
 				></label
@@ -216,7 +221,7 @@
 		{#if kind === 'pm2' || kind === 'docker'}
 			<label>
 				{kind === 'pm2' ? 'PM2 application' : 'Docker container'}
-				<select bind:value={target} required disabled={!server || (!discoveredServices.length && !target)}>
+				<select use:customSelect bind:value={target} required disabled={!server || (!discoveredServices.length && !target)}>
 					<option value=""
 						>{!server
 							? 'Select a server first'
@@ -261,7 +266,7 @@
 		{/if}
 		{#if http}<div class="form-row">
 				{#if kind === 'http'}<label
-						>Method<select bind:value={method}><option>GET</option><option>HEAD</option></select></label
+						>Method<select use:customSelect bind:value={method}><option>GET</option><option>HEAD</option></select></label
 					>{/if}<label
 					>Expected status<input type="number" bind:value={status} min="100" max="599" required /></label
 				>
@@ -306,7 +311,7 @@
 						put secrets in URLs, descriptions or embed templates.
 					</div>
 					<label
-						>Credentials<select bind:value={credentialAction}
+						>Credentials<select use:customSelect bind:value={credentialAction}
 							><option value="keep"
 								>{initial?.has_credentials ? 'Keep saved credentials' : 'No credentials'}</option
 							><option value="replace">Set / replace credentials</option>{#if initial?.has_credentials}<option
@@ -314,7 +319,7 @@
 								>{/if}</select
 						></label
 					>{#if credentialAction === 'replace'}<label
-							>HTTP authentication<select bind:value={authMode}
+							>HTTP authentication<select use:customSelect bind:value={authMode}
 								><option value="none">Headers only / no authentication</option><option value="bearer"
 									>Bearer token</option
 								><option value="basic">Basic authentication</option></select
@@ -382,7 +387,7 @@
 			</details>
 		{:else if kind === 'dns'}<div class="form-row">
 				<label
-					>DNS record type<select bind:value={recordType}
+					>DNS record type<select use:customSelect bind:value={recordType}
 						>{#each ['IP', 'A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV'] as value}<option {value}
 								>{value === 'IP' ? 'A + AAAA' : value}</option
 							>{/each}</select
@@ -462,6 +467,8 @@
 		<details>
 			<summary>Organization & advanced settings</summary>
 			<div class="form-stack inset">
+				<label>Alert dependency<select use:customSelect bind:value={dependsOn}><option value="">None</option>{#each monitors.filter((m) => m.id !== monitor?.id) as m}<option value={m.id}>{m.name}</option>{/each}</select></label>
+				<p class="muted small-text">If this monitor goes down while its dependency is down, its DOWN notification waits. Its incident and checks remain visible.</p>
 				<label
 					>Raw check retention (days)<input
 						type="number"
