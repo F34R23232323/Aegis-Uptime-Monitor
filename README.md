@@ -18,7 +18,7 @@ Rust checks and agents · PostgreSQL history · SvelteKit dashboard · Public st
 | | |
 | --- | --- |
 | **Checks** | HTTP/HTTPS, JSON API, TCP, DNS, TLS, Redis PING, SMTP greeting, PostgreSQL handshake, push heartbeats, Docker, PM2 and host resource checks |
-| **Alerts** | Durable Discord, JSON webhook and SMTP email deliveries with routing, retries and cooldowns |
+| **Alerts** | Durable Discord, JSON webhook and SMTP email deliveries with routing, retries, cooldowns and SLO budget alerts |
 | **Status** | Public-safe resources, branded status pages, incidents, maintenance, uptime and RSS |
 | **Host** | Linux with Docker Engine and Compose 2.24.4+; production HTTPS through Caddy |
 | **Storage** | PostgreSQL 17; no Redis service required |
@@ -144,7 +144,7 @@ Existing installations need a database and matching encryption-key backup before
 <details>
 <summary><strong>Notifications and incidents</strong></summary>
 
-- Discord embeds with validated templates, preview, event routing, monitor selection, mention controls, failure cooldowns, UTC quiet hours, delayed DOWN escalation and repeat reminders; generic JSON webhooks and SMTP email channels are also supported. Email delivery requires API-side `SMTP_HOST`, `SMTP_FROM` and optional SMTP credentials in `.env`.
+- Discord embeds with validated templates, preview, event routing, monitor selection, mention controls, failure cooldowns, UTC quiet hours, delayed DOWN escalation, repeat reminders and SLO budget alerts; generic JSON webhooks and SMTP email channels are also supported. Email delivery requires API-side `SMTP_HOST`, `SMTP_FROM` and optional SMTP credentials in `.env`.
 - **Send test** queues a real delivery. Saving a channel or previewing an embed does not send one.
 - Durable jobs retry provider failures across restarts. Delivery is at least once, so a crash at the wrong moment can repeat a provider message.
 - Automatic measured incidents stay private until you explicitly publish safe editorial text to a selected status page. Visitors can confirm email subscriptions for published incident updates when SMTP is configured and the page permits subscriptions.

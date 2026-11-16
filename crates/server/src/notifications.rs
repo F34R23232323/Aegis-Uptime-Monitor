@@ -210,7 +210,7 @@ pub fn render(template: &EmbedTemplate, p: &Value, brand: &str) -> Result<Value>
     template.validate()?;
     let state = p["state"].as_str().unwrap_or("TEST");
     let c = match state {
-        "DOWN" => &template.down_color,
+        "DOWN" | "SLO_BURN" => &template.down_color,
         "DEGRADED" => &template.degraded_color,
         _ => &template.recovered_color,
     };
@@ -310,10 +310,10 @@ async fn validate_channel(a: &App, c: &ChannelInput) -> Result<()> {
         || c.name.len() > 120
         || !["discord", "webhook", "email"].contains(&c.provider.as_str())
         || c.events.is_empty()
-        || c.events.len() > 3
+        || c.events.len() > 4
         || c.events
             .iter()
-            .any(|e| !["DOWN", "RECOVERED", "DEGRADED"].contains(&e.as_str()))
+            .any(|e| !["DOWN", "RECOVERED", "DEGRADED", "SLO_BURN"].contains(&e.as_str()))
         || c.monitor_ids.len() > 200
         || !(0..=86400).contains(&c.cooldown_seconds)
         || !(0..=86400).contains(&c.delay_seconds)
@@ -450,7 +450,7 @@ pub async fn preview(
     Json(p): Json<PreviewInput>,
 ) -> Result<Json<Value>> {
     write(&u)?;
-    if !["DOWN", "RECOVERED", "DEGRADED", "TEST"].contains(&p.event.as_str()) {
+    if !["DOWN", "RECOVERED", "DEGRADED", "SLO_BURN", "TEST"].contains(&p.event.as_str()) {
         return Err(bad("Invalid preview event"));
     }
     Ok(Json(render(

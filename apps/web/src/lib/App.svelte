@@ -102,6 +102,15 @@
 	let pages = $state<Page[]>([]);
 	let histories = $state<Record<string, Sample[]>>({});
 	let uptimes = $state<Record<string, Uptime>>({});
+	function sloBudget(m: Monitor, metric?: Uptime) {
+		const target = Number(m.config?.slo_target_percent);
+		const window = Number(m.config?.slo_window_days);
+		if (!target) return 'Not configured';
+		if (window !== analyticsDays) return `View ${window} days`;
+		if (!metric?.covered_seconds) return 'No measured coverage';
+		const budget = metric.covered_seconds * (1 - target / 100);
+		return budget > 0 ? `${((metric.down_seconds / budget) * 100).toFixed(1)}% used` : '—';
+	}
 	let detailChecks = $state<Sample[]>([]);
 	let detailUptime = $state<Uptime[]>([]);
 	let connected = $state(false);
@@ -1049,7 +1058,7 @@
 								<thead
 									><tr
 										><th>Monitor</th><th>Availability</th><th>Covered time</th><th>Down time</th><th
-											>Recent latency</th
+										>Error budget</th><th>Recent latency</th
 										></tr
 									></thead
 								><tbody
@@ -1058,15 +1067,15 @@
 										.reverse() as m}<tr
 											><td
 												><a href={'/monitors/' + m.id}>{m.name}</a><small class="muted"
-													>{m.kind} · {m.group_name || 'Ungrouped'}</small
+												>{m.kind} · {m.group_name || 'Ungrouped'}</small>{#if m.config?.slo_target_percent}<small class="muted">SLO {m.config.slo_target_percent}% · {m.config.slo_window_days} days · alert at {m.config.slo_alert_percent}% budget</small>{/if}
 												></td
 											><td class="green">{percent(uptimes[m.id]?.uptime)}</td><td
 												>{((uptimes[m.id]?.covered_seconds || 0) / 3600).toFixed(2)} h</td
-											><td>{((uptimes[m.id]?.down_seconds || 0) / 60).toFixed(1)} m</td><td
+											><td>{((uptimes[m.id]?.down_seconds || 0) / 60).toFixed(1)} m</td><td>{sloBudget(m, uptimes[m.id])}</td><td
 												><Chart checks={histories[m.id] || []} compact /></td
 											></tr
 										>{:else}<tr
-											><td class="empty-cell" colspan="5">Add a monitor to begin measuring reliability.</td
+											><td class="empty-cell" colspan="6">Add a monitor to begin measuring reliability.</td
 											></tr
 										>{/each}</tbody
 								>

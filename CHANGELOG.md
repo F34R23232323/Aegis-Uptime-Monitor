@@ -2,6 +2,8 @@
 
 ## Status platform and deployment hardening
 
+- Per-monitor SLO targets and measured error-budget alerts with channel routing, daily deduplication and analytics display.
+
 - Public status-page email subscriptions with address confirmation, per-page control, safe editorial incident messages, queued retries and unsubscribe links.
 
 - Optional per-user authenticator verification (SHA-256 TOTP) with setup confirmation, replay protection and CLI recovery reset.

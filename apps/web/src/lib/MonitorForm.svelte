@@ -46,6 +46,10 @@
 	let checkRetries = $state(Number(initial?.config?.check_retries ?? 0));
 	let followRedirects = $state(Boolean(initial?.config?.follow_redirects ?? false));
 	let retentionDays = $state(Number(initial?.config?.retention_days ?? 90));
+	let sloEnabled = $state(initial?.config?.slo_target_percent != null);
+	let sloTarget = $state(Number(initial?.config?.slo_target_percent ?? 99.9));
+	let sloWindow = $state(Number(initial?.config?.slo_window_days ?? 30));
+	let sloAlert = $state(Number(initial?.config?.slo_alert_percent ?? 75));
 	let cpu = $state(Number(initial?.config?.cpu_threshold || 95));
 	let memory = $state(Number(initial?.config?.memory_threshold || 95));
 	let disk = $state(Number(initial?.config?.disk_threshold || 90));
@@ -119,6 +123,11 @@
 		if (['http', 'json', 'tcp', 'dns', 'tls', 'redis', 'smtp', 'postgres'].includes(kind))
 			config.check_retries = checkRetries;
 		config.retention_days = retentionDays;
+		if (sloEnabled) {
+			config.slo_target_percent = sloTarget;
+			config.slo_window_days = sloWindow;
+			config.slo_alert_percent = sloAlert;
+		}
 		let credentials: Record<string, unknown> | undefined;
 		if (http && credentialAction === 'clear') credentials = { clear: true };
 		else if (http && credentialAction === 'replace')
@@ -478,6 +487,12 @@
 						required
 					/></label
 				>
+				<label class="checkbox"><input type="checkbox" bind:checked={sloEnabled} /> Track an availability SLO and alert on error-budget use</label>
+				{#if sloEnabled}<div class="form-row three">
+					<label>Target availability %<input type="number" bind:value={sloTarget} min="90" max="99.999" step="0.001" required /></label>
+					<label>Window<select use:customSelect bind:value={sloWindow}><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option></select></label>
+					<label>Alert at budget used %<input type="number" bind:value={sloAlert} min="1" max="100" required /></label>
+				</div><p class="muted small-text">Budget use counts only confirmed UP and DOWN time. Choose the SLO_BURN event on a channel to receive at most one alert per monitor each day after an hour of measured coverage.</p>{/if}
 				{#if ['http', 'json', 'tcp', 'dns', 'tls', 'redis', 'smtp', 'postgres'].includes(kind)}
 					<label
 						>Retries within each observation<input

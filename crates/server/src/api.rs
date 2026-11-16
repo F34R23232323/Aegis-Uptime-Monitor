@@ -151,6 +151,9 @@ async fn validate(a: &App, m: &MonitorInput) -> Result<Option<Uuid>> {
                 "check_retries",
                 "follow_redirects",
                 "retention_days",
+                "slo_target_percent",
+                "slo_window_days",
+                "slo_alert_percent",
             ]
             .contains(&k.as_str())
         })

@@ -169,6 +169,16 @@ impl MonitorInput {
         {
             return Err("Raw check retention must be 7–365 days");
         }
+        if let Some(target) = self.config.get("slo_target_percent") {
+            if !target.as_f64().is_some_and(|n| n.is_finite() && (90.0..=99.999).contains(&n))
+                || !self.config.get("slo_window_days").and_then(serde_json::Value::as_i64).is_some_and(|n| [7,30,90].contains(&n))
+                || !self.config.get("slo_alert_percent").and_then(serde_json::Value::as_i64).is_some_and(|n| (1..=100).contains(&n))
+            {
+                return Err("SLO target, window or alert threshold is invalid");
+            }
+        } else if self.config.get("slo_window_days").is_some() || self.config.get("slo_alert_percent").is_some() {
+            return Err("SLO target is required when SLO options are set");
+        }
         for key in ["cpu_threshold", "memory_threshold", "disk_threshold"] {
             if let Some(v) = self.config.get(key)
                 && !v.as_f64().is_some_and(|n| (1.0..=100.0).contains(&n))
@@ -307,6 +317,10 @@ mod tests {
         monitor.config = serde_json::json!({"retention_days":7});
         assert!(monitor.validate().is_ok());
         monitor.config = serde_json::json!({"retention_days":366});
+        assert!(monitor.validate().is_err());
+        monitor.config = serde_json::json!({"slo_target_percent":99.9,"slo_window_days":30,"slo_alert_percent":75});
+        assert!(monitor.validate().is_ok());
+        monitor.config = serde_json::json!({"slo_target_percent":100,"slo_window_days":30,"slo_alert_percent":75});
         assert!(monitor.validate().is_err());
         monitor.kind = "json".into();
         monitor.config = serde_json::json!({"json_component_id":"abc-123"});

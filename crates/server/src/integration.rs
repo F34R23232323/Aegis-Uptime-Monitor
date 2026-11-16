@@ -124,6 +124,33 @@ async fn status_subscriber_jobs_use_only_published_text_and_tokens(pool: sqlx::P
         .fetch_one(&a.db).await.unwrap();
     assert_eq!(remaining,0);
 }
+#[sqlx::test(migrations = "../../migrations")]
+async fn slo_budget_alert_uses_measured_coverage_and_deduplicates(pool: sqlx::PgPool) {
+    let a = app(pool);
+    let cookie = owner_session(&a).await;
+    let mut monitor = input();
+    monitor["config"] = json!({"slo_target_percent":99.9,"slo_window_days":30,"slo_alert_percent":75});
+    let (status, created, _) = request(&a,"POST","/monitors",monitor,Some(&cookie)).await;
+    assert_eq!(status,StatusCode::OK);
+    let id: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+    let channel = Uuid::new_v4();
+    sqlx::query("INSERT INTO notification_channels(id,name,provider,secret,events) VALUES($1,'SLO','webhook','encrypted',ARRAY['SLO_BURN'])")
+        .bind(channel).execute(&a.db).await.unwrap();
+    sqlx::query("UPDATE monitors SET interval_seconds=3600,state='DOWN' WHERE id=$1")
+        .bind(id).execute(&a.db).await.unwrap();
+    slo::evaluate(&a).await.unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM slo_alerts").fetch_one(&a.db).await.unwrap();
+    assert_eq!(count,0);
+    sqlx::query("INSERT INTO checks(monitor_id,ok,state,latency_ms,created_at) VALUES($1,true,'UP',0,now()-interval '2 hours'),($1,false,'DOWN',0,now()-interval '1 hour'),($1,false,'DOWN',0,now())")
+        .bind(id).execute(&a.db).await.unwrap();
+    slo::evaluate(&a).await.unwrap();
+    slo::evaluate(&a).await.unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM slo_alerts WHERE monitor_id=$1").bind(id).fetch_one(&a.db).await.unwrap();
+    assert_eq!(count,1);
+    let deliveries: i64 = sqlx::query_scalar("SELECT count(*) FROM notification_deliveries WHERE channel_id=$1 AND event='SLO_BURN'")
+        .bind(channel).fetch_one(&a.db).await.unwrap();
+    assert_eq!(deliveries,1);
+}
 fn input() -> Value {
     json!({"name":"test website","kind":"http","target":"http://127.0.0.1:19191/health","interval_seconds":20,"timeout_seconds":5,"failure_threshold":2,"recovery_threshold":2,"public":true})
 }

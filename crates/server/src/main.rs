@@ -6,6 +6,7 @@ mod engine;
 mod notifications;
 mod status;
 mod subscriptions;
+mod slo;
 use aes_gcm::{
     Aes256Gcm, KeyInit,
     aead::{Aead, OsRng, rand_core::RngCore},

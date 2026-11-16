@@ -33,6 +33,7 @@ pub fn start(a: Arc<App>) {
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
+    slo::start(a.clone());
     tokio::spawn(async move {
         loop {
             if let Err(e) = prune(&a).await {
@@ -377,6 +378,7 @@ async fn prune(a: &App) -> Result<()> {
         "DELETE FROM notification_deliveries WHERE created_at<now()-interval '90 days' AND state!='pending'",
         "DELETE FROM status_subscriptions WHERE NOT confirmed AND created_at<now()-interval '7 days'",
         "DELETE FROM status_subscription_deliveries WHERE created_at<now()-interval '30 days' AND state!='pending'",
+        "DELETE FROM slo_alerts WHERE alert_date<(now() AT TIME ZONE 'UTC')::date-90",
     ] {
         sqlx::query(query).execute(&a.db).await?;
     }

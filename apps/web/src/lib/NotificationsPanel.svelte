@@ -286,7 +286,7 @@
 		<fieldset>
 			<legend>Events to send</legend>
 			<div class="check-options">
-				{#each ['DOWN', 'RECOVERED', 'DEGRADED'] as event}<label class="checkbox"
+					{#each ['DOWN', 'RECOVERED', 'DEGRADED', 'SLO_BURN'] as event}<label class="checkbox"
 						><input type="checkbox" value={event} bind:group={events} />{event}</label
 					>{/each}
 			</div>
@@ -391,7 +391,7 @@
 					<div class="row-between">
 						<label
 							>Preview event<select use:customSelect bind:value={previewEvent}
-								><option>DOWN</option><option>RECOVERED</option><option>DEGRADED</option><option>TEST</option
+								><option>DOWN</option><option>RECOVERED</option><option>DEGRADED</option><option>SLO_BURN</option><option>TEST</option
 								></select
 							></label
 						><button type="button" class="button" onclick={() => void preview()}

@@ -36,7 +36,7 @@ If the directory is not yet a Git repository, initialize it only when the task a
 | `crates/server/src/status.rs` | Resources, public pages, editorial incidents, maintenance and audit |
 | `crates/server/src/integration.rs` | PostgreSQL-backed API and state integration tests |
 | `crates/agent/src/main.rs` | Outbound heartbeat, host metrics, Docker and PM2 inventory |
-| `migrations/` | Versioned SQLx PostgreSQL schema; twelve migrations currently exist |
+| `migrations/` | Versioned SQLx PostgreSQL schema; thirteen migrations currently exist |
 | `apps/web/src/lib/App.svelte` | Authenticated workspace shell, navigation and data refresh |
 | `apps/web/src/lib/api.ts`, `public.ts` | Browser API contracts and public-page types/helpers |
 | `apps/web/src/lib/*.svelte` | Feature panels and shared UI |
@@ -69,7 +69,7 @@ The browser uses same-origin cookie requests and authorized SSE invalidations, t
 
 `MonitorForm.svelte` is the main editor for monitor definitions and test requests. Rust `MonitorInput` in core is the canonical input validator. The server stores definitions and schedules checks; checks code performs the network protocol work. The API then serves definitions, individual history, batched summaries, counts and coverage-aware availability. Monitor kinds currently include HTTP, JSON API, TCP, DNS, TLS, Redis, SMTP, PostgreSQL, push heartbeat, Docker, PM2, host, CPU, memory and disk. The fixed Redis/SMTP/PostgreSQL probes are reachability or handshake checks, not authenticated application transactions. Docker container running state is not equivalent to an application health check unless the container supplies a HEALTHCHECK. Pair service checks with application-level HTTP/TCP monitoring where appropriate.
 
-Monitor interval, timeout, thresholds, retry, redirects, push grace and raw-check retention have bounded input rules. Find the precise accepted fields and ranges in `crates/core/src/lib.rs`, `crates/checks/src/lib.rs` and the form; do not rely solely on examples. Push secrets are returned once and stored as hashes. A delayed or missing push becomes a failed observation after its configured grace. Pausing creates an explicit state boundary. Maintenance keeps telemetry while suppressing new incidents/alerts. In availability calculations, paused/maintenance/unknown gaps are excluded rather than counted as uptime.
+Monitor interval, timeout, thresholds, retry, redirects, push grace, SLO settings and raw-check retention have bounded input rules. Find the precise accepted fields and ranges in `crates/core/src/lib.rs`, `crates/checks/src/lib.rs` and the form; do not rely solely on examples. Push secrets are returned once and stored as hashes. A delayed or missing push becomes a failed observation after its configured grace. Pausing creates an explicit state boundary. Maintenance keeps telemetry while suppressing new incidents/alerts. In availability calculations, paused/maintenance/unknown gaps are excluded rather than counted as uptime.
 
 ### Servers and outbound agents
 
@@ -77,7 +77,7 @@ The Servers UI creates a server record and reveals enrollment credentials once. 
 
 ### Alerts and notification channels
 
-Notification channels support Discord webhooks, generic JSON webhooks and SMTP email to one address per channel. Email uses API-side STARTTLS settings from `.env`. Discord templates have validated variables, editable embed fields, previews, event choices, explicit monitor routes, per-monitor DOWN cooldowns, UTC quiet hours, delayed DOWN escalation and repeat reminders. Monitor dependency relationships defer child DOWN deliveries while the direct parent monitor is DOWN; incidents still record. Preview/save does not send a message; Send test queues actual delivery. Empty channel routes mean all monitors, and deleting the last explicitly routed monitor must not silently broaden a channel to all monitors. Recovery is eligible even when the DOWN cooldown is active. Jobs persist with template snapshots and retry after process restarts. A remote provider may receive a duplicate if the process crashes after provider acceptance but before DB acknowledgement.
+Notification channels support Discord webhooks, generic JSON webhooks and SMTP email to one address per channel. Email uses API-side STARTTLS settings from `.env`. Discord templates have validated variables, editable embed fields, previews, event choices including SLO_BURN, explicit monitor routes, per-monitor DOWN cooldowns, UTC quiet hours, delayed DOWN escalation and repeat reminders. SLO error-budget alerts use coverage-aware measured availability and at most one alert per monitor per UTC day after one hour of coverage. Monitor dependency relationships defer child DOWN deliveries while the direct parent monitor is DOWN; incidents still record. Preview/save does not send a message; Send test queues actual delivery. Empty channel routes mean all monitors, and deleting the last explicitly routed monitor must not silently broaden a channel to all monitors. Recovery is eligible even when the DOWN cooldown is active. Jobs persist with template snapshots and retry after process restarts. A remote provider may receive a duplicate if the process crashes after provider acceptance but before DB acknowledgement.
 
 ### Status resources, pages and incidents
 
