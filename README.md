@@ -165,7 +165,7 @@ Existing installations need a database and matching encryption-key backup before
 <details>
 <summary><strong>Security and operations</strong></summary>
 
-- One-time first-owner enrollment, Owner/Admin/Viewer roles, Argon2id passwords, revocable sessions, exact-Origin mutation checks and encrypted saved webhook/monitor credentials.
+- One-time first-owner enrollment, Owner/Admin/Viewer roles, Argon2id passwords, optional authenticator verification, revocable sessions, exact-Origin mutation checks and encrypted saved webhook/monitor credentials.
 - Same-origin API requests, public-safe API projections, bounded probes, private-target policy and a production HTTPS profile.
 - Guarded backup/restore scripts, internal health endpoints and an optional bearer-protected Prometheus aggregate exporter.
 - A single active scheduler is enforced by a PostgreSQL advisory lock. Run an independent observer if you need to detect the Aegis host's complete outage.

@@ -6,13 +6,57 @@
 	let sessions = $state<SessionInfo[]>([]);
 	let audit = $state<AuditEntry[]>([]);
 	let error = $state('');
+	let totpEnabled = $state(false);
+	let totpPassword = $state('');
+	let totpCode = $state('');
+	let totpSecret = $state('');
+	let totpUri = $state('');
+	let totpBusy = $state(false);
 	async function load() {
 		try {
 			sessions = await api<SessionInfo[]>('/auth/sessions');
+			totpEnabled = (await api<{ enabled: boolean }>('/auth/totp')).enabled;
 			if (owner) audit = await api<AuditEntry[]>('/audit');
 		} catch (e) {
 			error = (e as Error).message;
 		}
+	}
+	async function setupTotp() {
+		totpBusy = true;
+		error = '';
+		try {
+			const result = await api<{ secret: string; uri: string }>('/auth/totp/setup', 'POST', { password: totpPassword });
+			totpSecret = result.secret;
+			totpUri = result.uri;
+			totpCode = '';
+			totpPassword = '';
+		} catch (e) { error = (e as Error).message; }
+		finally { totpBusy = false; }
+	}
+	async function enableTotp() {
+		totpBusy = true;
+		error = '';
+		try {
+			await api('/auth/totp/enable', 'POST', { code: totpCode });
+			totpEnabled = true;
+			totpSecret = '';
+			totpUri = '';
+			totpCode = '';
+			onmessage('Authenticator verification enabled.');
+		} catch (e) { error = (e as Error).message; }
+		finally { totpBusy = false; }
+	}
+	async function disableTotp() {
+		totpBusy = true;
+		error = '';
+		try {
+			await api('/auth/totp/disable', 'POST', { password: totpPassword, code: totpCode });
+			totpEnabled = false;
+			totpPassword = '';
+			totpCode = '';
+			onmessage('Authenticator verification disabled.');
+		} catch (e) { error = (e as Error).message; }
+		finally { totpBusy = false; }
 	}
 	onMount(() => {
 		void load();
@@ -69,6 +113,33 @@
 				>
 			</div>{/each}
 	</div>
+</section>
+<section class="panel settings-panel full-grid">
+	<h2><ShieldCheck size={16} /> Authenticator verification</h2>
+	<p class="muted small-text">Use a time-based authenticator app. Codes use SHA-256, six digits and a 30-second period. Save your account recovery procedure before enabling.</p>
+	{#if totpEnabled}
+		<form class="form-stack" onsubmit={(e) => { e.preventDefault(); void disableTotp(); }}>
+			<p>Enabled for your account.</p>
+			<label>Current password<input type="password" autocomplete="current-password" bind:value={totpPassword} required /></label>
+			<label>Current authenticator code<input inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" bind:value={totpCode} required /></label>
+			<button class="button small" disabled={totpBusy}>Disable verification</button>
+		</form>
+	{:else if totpSecret}
+		<div class="form-stack">
+			<p>Add this secret to your authenticator app, then enter its current code to confirm:</p>
+			<code>{totpSecret}</code>
+			<details><summary>Provisioning URI</summary><code>{totpUri}</code></details>
+			<form class="form-stack" onsubmit={(e) => { e.preventDefault(); void enableTotp(); }}>
+				<label>Authenticator code<input inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" bind:value={totpCode} required /></label>
+				<button class="button small" disabled={totpBusy}>Enable verification</button>
+			</form>
+		</div>
+	{:else}
+		<form class="form-stack" onsubmit={(e) => { e.preventDefault(); void setupTotp(); }}>
+			<label>Confirm current password<input type="password" autocomplete="current-password" bind:value={totpPassword} required /></label>
+			<button class="button small" disabled={totpBusy}>Set up authenticator</button>
+		</form>
+	{/if}
 </section>
 {#if owner}<section class="panel settings-panel full-grid">
 		<h2>Administrative audit log</h2>

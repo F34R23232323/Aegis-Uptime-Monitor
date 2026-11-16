@@ -56,6 +56,35 @@ async fn owner_session(a: &Arc<App>) -> String {
     assert_eq!(status, StatusCode::OK);
     cookie.unwrap()
 }
+#[sqlx::test(migrations = "../../migrations")]
+async fn totp_requires_code_rejects_replay_and_disables_with_password(pool: sqlx::PgPool) {
+    let a = app(pool);
+    let cookie = owner_session(&a).await;
+    let password = "a-long-unique-test-password";
+    let (status, setup, _) = request(&a, "POST", "/auth/totp/setup", json!({"password":password}), Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(setup["uri"].as_str().unwrap().contains("algorithm=SHA256"));
+    let encrypted: String = sqlx::query_scalar("SELECT totp_pending_secret FROM users WHERE email='owner@example.test'")
+        .fetch_one(&a.db).await.unwrap();
+    let secret = hex::decode(decrypt(&a, &encrypted).unwrap()).unwrap();
+    let step = chrono::Utc::now().timestamp() / 30;
+    let code = totp::code(&secret, step);
+    let (status, _, _) = request(&a, "POST", "/auth/totp/enable", json!({"code":code}), Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(request(&a, "POST", "/auth/totp/setup", json!({"password":password}), Some(&cookie)).await.0, StatusCode::BAD_REQUEST);
+    let credentials = json!({"email":"owner@example.test","password":password});
+    assert_eq!(request(&a, "POST", "/auth/login", credentials.clone(), None).await.0, StatusCode::UNAUTHORIZED);
+    let credentials = json!({"email":"owner@example.test","password":password,"totp_code":totp::code(&secret, step + 1)});
+    assert_eq!(request(&a, "POST", "/auth/login", credentials.clone(), None).await.0, StatusCode::OK);
+    assert_eq!(request(&a, "POST", "/auth/login", credentials, None).await.0, StatusCode::UNAUTHORIZED);
+    let (status, _, _) = request(&a, "POST", "/auth/totp/disable", json!({"password":password,"code":totp::code(&secret, step + 1)}), Some(&cookie)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    sqlx::query("UPDATE users SET totp_last_step=$1 WHERE email='owner@example.test'")
+        .bind(step - 1).execute(&a.db).await.unwrap();
+    let (status, _, _) = request(&a, "POST", "/auth/totp/disable", json!({"password":password,"code":totp::code(&secret, step)}), Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(request(&a, "POST", "/auth/login", json!({"email":"owner@example.test","password":password}), None).await.0, StatusCode::OK);
+}
 fn input() -> Value {
     json!({"name":"test website","kind":"http","target":"http://127.0.0.1:19191/health","interval_seconds":20,"timeout_seconds":5,"failure_threshold":2,"recovery_threshold":2,"public":true})
 }

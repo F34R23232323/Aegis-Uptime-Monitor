@@ -2,6 +2,8 @@
 
 ## Status platform and deployment hardening
 
+- Optional per-user authenticator verification (SHA-256 TOTP) with setup confirmation, replay protection and CLI recovery reset.
+
 - Repeat DOWN reminders for open incidents after successful initial delivery, with per-channel intervals and recovery cancellation.
 
 - Discord embed designer with validated variables, custom fields/colors/footer/images, safe preview, channel editing, event/monitor routes, failure cooldowns, queued template snapshots and failed-delivery retry.
@@ -13,4 +15,4 @@
 - Production Caddy Compose overlay, private-service proxy exclusions, guarded backup/restore scripts and CI coverage.
 - Additive migrations preserve existing data. Deletion cleans memberships, disables a channel losing its last explicit route rather than broadcasting, cancels pending alerts for deleted monitors and avoids broadening incident publication when its final selected resource is removed.
 
-Upgrade with a database/key backup and the same Compose project/volumes. Read docs/operations.md and docs/limitations.md. Public subscriptions, email/Telegram alerts, TOTP, ICMP, automatic custom domains, dependency suppression and downsampling remain outside this release.
+Upgrade with a database/key backup and the same Compose project/volumes. Read docs/operations.md and docs/limitations.md. Public subscriptions, Telegram alerts, ICMP, automatic custom domains and downsampling remain outside this release.

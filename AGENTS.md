@@ -36,7 +36,7 @@ If the directory is not yet a Git repository, initialize it only when the task a
 | `crates/server/src/status.rs` | Resources, public pages, editorial incidents, maintenance and audit |
 | `crates/server/src/integration.rs` | PostgreSQL-backed API and state integration tests |
 | `crates/agent/src/main.rs` | Outbound heartbeat, host metrics, Docker and PM2 inventory |
-| `migrations/` | Versioned SQLx PostgreSQL schema; ten migrations currently exist |
+| `migrations/` | Versioned SQLx PostgreSQL schema; eleven migrations currently exist |
 | `apps/web/src/lib/App.svelte` | Authenticated workspace shell, navigation and data refresh |
 | `apps/web/src/lib/api.ts`, `public.ts` | Browser API contracts and public-page types/helpers |
 | `apps/web/src/lib/*.svelte` | Feature panels and shared UI |
@@ -91,7 +91,7 @@ Automatic measured incidents remain private until explicitly published. Editors 
 
 ### Account and security settings
 
-The first successful owner enrollment closes public setup. Owner/Admin/Viewer roles have different powers; the Owner manages users. Sessions use opaque tokens with hashed verifiers and HttpOnly cookies; security settings list/revoke/rotate sessions. Password change and CLI recovery revoke sessions. Production bootstrap requires a separate token that should be removed after enrollment. `SecurityPanel.svelte` and `auth.rs` must stay aligned. Login and setup are rate-limited and mutation Origin checks include unauthenticated auth actions.
+The first successful owner enrollment closes public setup. Owner/Admin/Viewer roles have different powers; the Owner manages users. Sessions use opaque tokens with hashed verifiers and HttpOnly cookies; security settings list/revoke/rotate sessions and manage optional SHA-256 TOTP verification. Password change and CLI recovery revoke sessions; CLI recovery also disables TOTP. Production bootstrap requires a separate token that should be removed after enrollment. `SecurityPanel.svelte` and `auth.rs` must stay aligned. Login and setup are rate-limited and mutation Origin checks include unauthenticated auth actions.
 
 ## Rust behavior that must remain true
 

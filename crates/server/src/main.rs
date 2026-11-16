@@ -1,5 +1,6 @@
 mod api;
 mod auth;
+mod totp;
 mod credentials;
 mod engine;
 mod notifications;
@@ -245,6 +246,10 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/auth/sessions", get(auth::sessions))
         .route("/auth/sessions/{id}", delete(auth::revoke_session))
         .route("/auth/refresh", post(auth::refresh_session))
+        .route("/auth/totp", get(totp::state))
+        .route("/auth/totp/setup", post(totp::setup))
+        .route("/auth/totp/enable", post(totp::enable))
+        .route("/auth/totp/disable", post(totp::disable))
         .route("/users", get(auth::users).post(auth::add_user))
         .route("/users/{id}", delete(auth::delete_user))
         .route("/monitors", get(api::monitors).post(api::create_monitor))

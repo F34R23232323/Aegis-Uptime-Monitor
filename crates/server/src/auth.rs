@@ -12,7 +12,7 @@ use serde::Deserialize;
 use sqlx::Row;
 use uuid::Uuid;
 static PASSWORD_WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
-async fn password_slot() -> Result<tokio::sync::SemaphorePermit<'static>> {
+pub(crate) async fn password_slot() -> Result<tokio::sync::SemaphorePermit<'static>> {
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
         PASSWORD_WORKERS.acquire(),
@@ -111,6 +111,7 @@ pub struct Credentials {
     email: String,
     password: String,
     setup_token: Option<String>,
+    totp_code: Option<String>,
 }
 fn validate(c: &Credentials) -> Result<()> {
     if c.email.len() > 254
@@ -230,6 +231,7 @@ pub async fn login(
         ));
     }
     let id: Uuid = row.ok_or_else(|| bad("Invalid credentials"))?.get("id");
+    crate::totp::verify_login(&app, id, c.totp_code.as_deref()).await?;
     session(&app, id).await
 }
 async fn session(app: &App, id: Uuid) -> Result<Response> {
@@ -284,6 +286,7 @@ pub async fn password(
         email: u.email.clone(),
         password: c.password.clone(),
         setup_token: None,
+        totp_code: None,
     })?;
     let stored: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
         .bind(u.id)
@@ -354,6 +357,7 @@ pub async fn add_user(
         email: c.email.clone(),
         password: c.password.clone(),
         setup_token: None,
+        totp_code: None,
     })?;
     let hashed = password_hash(c.password).await?;
     sqlx::query("INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,$3,$4)")
@@ -389,7 +393,7 @@ pub async fn recover(db: &sqlx::PgPool) -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("Hash failed"))?;
     let mut tx = db.begin().await?;
     let id: Uuid =
-        sqlx::query_scalar("UPDATE users SET password_hash=$1 WHERE email=$2 RETURNING id")
+        sqlx::query_scalar("UPDATE users SET password_hash=$1,totp_secret=NULL,totp_pending_secret=NULL,totp_last_step=-1 WHERE email=$2 RETURNING id")
             .bind(hashed)
             .bind(email.to_lowercase())
             .fetch_one(&mut *tx)

@@ -10,6 +10,7 @@
 	let setupToken = $state('');
 	let email = $state('');
 	let password = $state('');
+	let totpCode = $state('');
 	let visible = $state(false);
 	let busy = $state(false);
 	let error = $state('');
@@ -26,7 +27,8 @@
 				await api(setup ? '/setup' : '/auth/login', 'POST', {
 					email,
 					password,
-					setup_token: setup ? setupToken : undefined
+					setup_token: setup ? setupToken : undefined,
+					totp_code: setup ? undefined : totpCode || undefined
 				});
 				ondone();
 			}
@@ -111,7 +113,7 @@
 								>{#if visible}<EyeOff size={17} />{:else}<Eye size={17} />{/if}</button
 							>
 						</div></label
-					>{/if}{#if error}<p class="error" role="alert">{error}</p>{/if}<button
+					>{/if}{#if !setup && !recovery}<label>Authenticator code (if enabled)<input inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" bind:value={totpCode} placeholder="6-digit code" /></label>{/if}{#if error}<p class="error" role="alert">{error}</p>{/if}<button
 					class="button primary full"
 					disabled={busy}
 					>{busy
