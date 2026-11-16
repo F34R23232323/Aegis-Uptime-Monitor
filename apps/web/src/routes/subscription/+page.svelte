@@ -13,19 +13,36 @@
 		if (!action) return;
 		busy = true;
 		try {
-			const result = await api<{ message: string }>('/public/subscriptions/' + action.kind, 'POST', { id: action.id, token: action.token });
+			const result = await api<{ message: string }>('/public/subscriptions/' + action.kind, 'POST', {
+				id: action.id,
+				token: action.token
+			});
 			message = result.message;
 			action = null;
 			history.replaceState(history.state, '', location.pathname);
-		} catch (e) { message = (e as Error).message; }
-		finally { busy = false; }
+		} catch (e) {
+			message = (e as Error).message;
+		} finally {
+			busy = false;
+		}
 	}
 </script>
-<svelte:head><title>Status email subscription</title><meta name="robots" content="noindex,nofollow" /></svelte:head>
-<main class="auth-page"><section class="auth-card">
-	<h1>Status email subscription</h1>
-	{#if action}<p>{action.kind === 'confirm' ? 'Confirm that you want published incident updates by email.' : 'Stop receiving published incident updates by email.'}</p>
-		<button class="button primary" disabled={busy} onclick={() => void finish()}>{action.kind === 'confirm' ? 'Confirm subscription' : 'Unsubscribe'}</button>
-	{/if}
-	{#if message}<p role="status">{message}</p>{/if}
-</section></main>
+
+<svelte:head
+	><title>Status email subscription</title><meta name="robots" content="noindex,nofollow" /></svelte:head
+>
+<main class="auth-page">
+	<section class="auth-card">
+		<h1>Status email subscription</h1>
+		{#if action}<p>
+				{action.kind === 'confirm'
+					? 'Confirm that you want published incident updates by email.'
+					: 'Stop receiving published incident updates by email.'}
+			</p>
+			<button class="button primary" disabled={busy} onclick={() => void finish()}
+				>{action.kind === 'confirm' ? 'Confirm subscription' : 'Unsubscribe'}</button
+			>
+		{/if}
+		{#if message}<p role="status">{message}</p>{/if}
+	</section>
+</main>
