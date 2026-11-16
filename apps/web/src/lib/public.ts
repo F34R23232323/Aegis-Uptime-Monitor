@@ -63,6 +63,7 @@ export interface PublicPage {
 	incidents: PublicIncident[];
 	maintenance: PublicMaintenance[];
 	overall_state: ResourceState;
+	subscriptions_enabled: boolean;
 	generated_at: string;
 }
 export const statusLabels: Record<ResourceState, string> = {

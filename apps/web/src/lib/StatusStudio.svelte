@@ -61,6 +61,7 @@
 	let support = $state('');
 	let supportLabel = $state('Contact support');
 	let footerText = $state('');
+	let subscriptionsEnabled = $state(true);
 	let announcement = $state('');
 	let selectedResources = $state<string[]>([]);
 	let selectedMonitors = $state<string[]>([]);
@@ -116,6 +117,7 @@
 		support = p?.support_url || '';
 		supportLabel = p?.support_label || 'Contact support';
 		footerText = p?.footer_text || '';
+		subscriptionsEnabled = p?.subscriptions_enabled ?? true;
 		announcement = p?.announcement || '';
 		selectedResources = [...(p?.resource_ids || [])];
 		selectedMonitors = [...(p?.monitor_ids || [])];
@@ -165,6 +167,7 @@
 				support_url: support,
 				support_label: supportLabel,
 				footer_text: footerText,
+				subscriptions_enabled: subscriptionsEnabled,
 				announcement,
 				resource_ids: selectedResources,
 				monitor_ids: selectedMonitors,
@@ -495,6 +498,7 @@
 		</div>
 		<label>Support link label<input bind:value={supportLabel} required maxlength="60" /></label>
 		<label>Footer text<textarea bind:value={footerText} maxlength="500" placeholder="Optional public footer note"></textarea></label>
+		<label class="checkbox"><input type="checkbox" bind:checked={subscriptionsEnabled} /> Allow visitors to subscribe to published incident updates by email</label>
 		<label
 			>Announcement banner<textarea
 				bind:value={announcement}

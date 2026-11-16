@@ -25,6 +25,32 @@
 	let { data: initial }: { data: { status: PublicPage } } = $props();
 	let data = $state<PublicPage>(untrack(() => initial.status));
 	let error = $state('');
+	let subscriberEmail = $state('');
+	let subscriptionMessage = $state('');
+	let subscriptionAction = $state<{ kind: 'confirm' | 'unsubscribe'; id: string; token: string } | null>(null);
+	let subscriptionBusy = $state(false);
+	async function subscribe(e: SubmitEvent) {
+		e.preventDefault();
+		subscriptionBusy = true;
+		subscriptionMessage = '';
+		try {
+			const result = await api<{ message: string }>('/public/status/' + encodeURIComponent(page.params.slug || '') + '/subscribe', 'POST', { email: subscriberEmail });
+			subscriptionMessage = result.message;
+			subscriberEmail = '';
+		} catch (e) { subscriptionMessage = (e as Error).message; }
+		finally { subscriptionBusy = false; }
+	}
+	async function finishSubscription() {
+		if (!subscriptionAction) return;
+		subscriptionBusy = true;
+		try {
+			const result = await api<{ message: string }>('/public/subscriptions/' + subscriptionAction.kind, 'POST', { id: subscriptionAction.id, token: subscriptionAction.token });
+			subscriptionMessage = result.message;
+			subscriptionAction = null;
+			history.replaceState(history.state, '', location.pathname + location.search);
+		} catch (e) { subscriptionMessage = (e as Error).message; }
+		finally { subscriptionBusy = false; }
+	}
 	// Reused route components must adopt the newly server-projected page on navigation.
 	$effect(() => {
 		const incoming = initial.status;
@@ -97,6 +123,8 @@
 		}
 	}
 	onMount(() => {
+		const action = /^#(confirm|unsubscribe)=([0-9a-f-]{36}):([0-9a-f]{64})$/i.exec(location.hash);
+		if (action) subscriptionAction = { kind: action[1] as 'confirm' | 'unsubscribe', id: action[2], token: action[3] };
 		timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 		language = navigator.language;
 		const syncHash = () => {
@@ -448,6 +476,19 @@
 		<div class="public-footnote">
 			<RefreshCw size={12} /> Last verified {time(updated)} · Refreshes every 30 seconds · Times shown in {timezone}
 		</div>
+		{#if data.subscriptions_enabled || subscriptionAction}<section class="panel">
+			<h2>Get incident updates by email</h2>
+			<p>Receive published status page incident updates. Confirm your address using the email we send.</p>
+			{#if subscriptionAction}
+				<button class="button primary" disabled={subscriptionBusy} onclick={() => void finishSubscription()}>{subscriptionAction.kind === 'confirm' ? 'Confirm subscription' : 'Unsubscribe'}</button>
+			{:else}
+				<form class="form-row" onsubmit={subscribe}>
+					<label>Email address<input type="email" bind:value={subscriberEmail} required maxlength="254" placeholder="you@example.com" /></label>
+					<button class="button primary" disabled={subscriptionBusy}>Subscribe</button>
+				</form>
+			{/if}
+			{#if subscriptionMessage}<p role="status">{subscriptionMessage}</p>{/if}
+		</section>{/if}
 		<footer class="public-footer">
 			<span><ShieldCheck size={14} /> {data.footer_text || 'Independently monitored'}</span><span>Powered by {data.brand}</span>
 		</footer>

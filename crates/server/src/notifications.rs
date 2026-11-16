@@ -77,7 +77,7 @@ fn valid_url(s: &str) -> bool {
                 && u.password().is_none()
         })
 }
-fn email_address(s: &str) -> bool {
+pub(crate) fn email_address(s: &str) -> bool {
     let Some((local, domain)) = s.split_once('@') else { return false; };
     !local.is_empty() && !domain.is_empty() && s.len() <= 254
         && local.bytes().all(|c| c.is_ascii_alphanumeric() || b".!#$%&'*+-/=?^_`{|}~".contains(&c))

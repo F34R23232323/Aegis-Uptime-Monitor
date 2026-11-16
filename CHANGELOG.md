@@ -2,6 +2,8 @@
 
 ## Status platform and deployment hardening
 
+- Public status-page email subscriptions with address confirmation, per-page control, safe editorial incident messages, queued retries and unsubscribe links.
+
 - Optional per-user authenticator verification (SHA-256 TOTP) with setup confirmation, replay protection and CLI recovery reset.
 
 - Repeat DOWN reminders for open incidents after successful initial delivery, with per-channel intervals and recovery cancellation.
@@ -15,4 +17,4 @@
 - Production Caddy Compose overlay, private-service proxy exclusions, guarded backup/restore scripts and CI coverage.
 - Additive migrations preserve existing data. Deletion cleans memberships, disables a channel losing its last explicit route rather than broadcasting, cancels pending alerts for deleted monitors and avoids broadening incident publication when its final selected resource is removed.
 
-Upgrade with a database/key backup and the same Compose project/volumes. Read docs/operations.md and docs/limitations.md. Public subscriptions, Telegram alerts, ICMP, automatic custom domains and downsampling remain outside this release.
+Upgrade with a database/key backup and the same Compose project/volumes. Read docs/operations.md and docs/limitations.md. Telegram alerts, ICMP, automatic custom domains and downsampling remain outside this release.

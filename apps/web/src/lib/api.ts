@@ -119,6 +119,7 @@ export interface Delivery {
 	created_at: string;
 }
 export interface Page {
+	subscriptions_enabled: boolean;
 	layout: 'standard' | 'provider';
 	metrics_settings: StatusMetricsSettings;
 	resource_ids: string[];

@@ -36,7 +36,7 @@ If the directory is not yet a Git repository, initialize it only when the task a
 | `crates/server/src/status.rs` | Resources, public pages, editorial incidents, maintenance and audit |
 | `crates/server/src/integration.rs` | PostgreSQL-backed API and state integration tests |
 | `crates/agent/src/main.rs` | Outbound heartbeat, host metrics, Docker and PM2 inventory |
-| `migrations/` | Versioned SQLx PostgreSQL schema; eleven migrations currently exist |
+| `migrations/` | Versioned SQLx PostgreSQL schema; twelve migrations currently exist |
 | `apps/web/src/lib/App.svelte` | Authenticated workspace shell, navigation and data refresh |
 | `apps/web/src/lib/api.ts`, `public.ts` | Browser API contracts and public-page types/helpers |
 | `apps/web/src/lib/*.svelte` | Feature panels and shared UI |
@@ -81,9 +81,9 @@ Notification channels support Discord webhooks, generic JSON webhooks and SMTP e
 
 ### Status resources, pages and incidents
 
-The status platform separates private monitor evidence from public presentation. A resource can link explicitly eligible public monitors or be manually managed; a resource without measured coverage has no invented uptime. An override can show operational/degraded/outage/maintenance/unknown with a public reason and optional expiry without changing underlying check history. A page selects resources, branding and ordered tabs (Overview, Incidents, Maintenance, Metrics or escaped custom text). Public HTML is at `/status/<slug>`; safe JSON and RSS are under `/api/v1/public/status/<slug>` and its `/feed` route. Public output is no-store and intentionally bounded.
+The status platform separates private monitor evidence from public presentation. A resource can link explicitly eligible public monitors or be manually managed; a resource without measured coverage has no invented uptime. An override can show operational/degraded/outage/maintenance/unknown with a public reason and optional expiry without changing underlying check history. A page selects resources, branding, an email subscription option and ordered tabs (Overview, Incidents, Maintenance, Metrics or escaped custom text). Public HTML is at `/status/<slug>`; safe JSON and RSS are under `/api/v1/public/status/<slug>` and its `/feed` route. Public output is no-store and intentionally bounded.
 
-Automatic measured incidents remain private until explicitly published. Editors can add safe summaries, severity, phase and timeline updates to selected pages. A measured incident cannot be manually marked resolved while the monitor remains unhealthy. Maintenance can select monitors/resources and publish separate safe notices. Resource membership expands to monitor IDs when a maintenance window is saved; saving again is needed if resource membership changes. Editorial/public data must not inherit raw failure strings or private notes.
+Automatic measured incidents remain private until explicitly published. Editors can add safe summaries, severity, phase and timeline updates to selected pages. A measured incident cannot be manually marked resolved while the monitor remains unhealthy. Maintenance can select monitors/resources and publish separate safe notices. Resource membership expands to monitor IDs when a maintenance window is saved; saving again is needed if resource membership changes. Editorial/public data must not inherit raw failure strings or private notes. Public email subscriptions require address confirmation, use only approved incident copy and provide unsubscribe links; delivery is queued and retried, and page/incident publication is checked again before sending.
 
 ### Presets and provider data
 

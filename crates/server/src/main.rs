@@ -5,6 +5,7 @@ mod credentials;
 mod engine;
 mod notifications;
 mod status;
+mod subscriptions;
 use aes_gcm::{
     Aes256Gcm, KeyInit,
     aead::{Aead, OsRng, rand_core::RngCore},
@@ -196,6 +197,7 @@ async fn main() -> anyhow::Result<()> {
         brand: std::env::var("APP_NAME").unwrap_or_else(|_| "Aegis Monitor".into()),
     });
     engine::start(app.clone());
+    subscriptions::start(app.clone());
     let routes = router(app.clone());
     tokio::spawn(async move {
         loop {
@@ -332,6 +334,9 @@ pub fn router(app: Arc<App>) -> Router {
                 .route("/auth/forgot", post(auth::forgot))
                 .route("/public/status/{slug}", get(status::public_page))
                 .route("/public/status/{slug}/feed", get(status::public_feed))
+                .route("/public/status/{slug}/subscribe", post(subscriptions::subscribe))
+                .route("/public/subscriptions/confirm", post(subscriptions::confirm))
+                .route("/public/subscriptions/unsubscribe", post(subscriptions::unsubscribe))
                 .route("/push/{token}", post(api::push))
                 .route("/agent/heartbeat", post(api::agent_heartbeat)),
         )

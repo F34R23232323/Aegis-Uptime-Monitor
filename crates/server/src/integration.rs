@@ -85,6 +85,45 @@ async fn totp_requires_code_rejects_replay_and_disables_with_password(pool: sqlx
     assert_eq!(status, StatusCode::OK);
     assert_eq!(request(&a, "POST", "/auth/login", json!({"email":"owner@example.test","password":password}), None).await.0, StatusCode::OK);
 }
+#[sqlx::test(migrations = "../../migrations")]
+async fn status_subscriber_jobs_use_only_published_text_and_tokens(pool: sqlx::PgPool) {
+    let a = app(pool);
+    let cookie = owner_session(&a).await;
+    let page = Uuid::new_v4();
+    let subscriber = Uuid::new_v4();
+    let token = secret();
+    sqlx::query("INSERT INTO status_pages(id,slug,title) VALUES($1,'public-test','Public Test')")
+        .bind(page).execute(&a.db).await.unwrap();
+    sqlx::query("INSERT INTO status_subscriptions(id,page_id,address_hash,address_cipher,confirm_hash) VALUES($1,$2,'address',$3,$4)")
+        .bind(subscriber).bind(page).bind(encrypt(&a,"reader@example.test").unwrap()).bind(hash(&token)).execute(&a.db).await.unwrap();
+    assert_eq!(request(&a,"POST","/public/subscriptions/confirm",json!({"id":subscriber,"token":token}),None).await.0,StatusCode::OK);
+    assert_eq!(request(&a,"POST","/public/subscriptions/confirm",json!({"id":subscriber,"token":token}),None).await.0,StatusCode::BAD_REQUEST);
+    assert_eq!(request(&a,"POST","/incidents",json!({"title":"Private incident","phase":"investigating","public_message":"Do not email yet","note":"private credential detail","published":false,"status_page_ids":[page]}),Some(&cookie)).await.0,StatusCode::OK);
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM status_subscription_deliveries").fetch_one(&a.db).await.unwrap();
+    assert_eq!(queued,0);
+    let (status, _, _) = request(&a,"POST","/incidents",json!({"title":"Public title","phase":"investigating","public_message":"Safe editorial update","note":"private credential detail","published":true,"status_page_ids":[page]}),Some(&cookie)).await;
+    assert_eq!(status,StatusCode::OK);
+    let cipher: String = sqlx::query_scalar("SELECT payload_cipher FROM status_subscription_deliveries WHERE subscription_id=$1")
+        .bind(subscriber).fetch_one(&a.db).await.unwrap();
+    assert!(!cipher.contains("private credential detail"));
+    let payload: Value = serde_json::from_str(&decrypt(&a,&cipher).unwrap()).unwrap();
+    assert_eq!(payload["reason"],"Safe editorial update");
+    assert!(!payload.to_string().contains("private credential detail"));
+    sqlx::query("UPDATE status_pages SET subscriptions_enabled=false WHERE id=$1")
+        .bind(page).execute(&a.db).await.unwrap();
+    subscriptions::deliver(&a).await.unwrap();
+    let state: String = sqlx::query_scalar("SELECT state FROM status_subscription_deliveries WHERE subscription_id=$1")
+        .bind(subscriber).fetch_one(&a.db).await.unwrap();
+    assert_eq!(state,"cancelled");
+    assert_eq!(request(&a,"POST","/incidents",json!({"title":"Disabled page","phase":"investigating","public_message":"Another update","published":true,"status_page_ids":[page]}),Some(&cookie)).await.0,StatusCode::OK);
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM status_subscription_deliveries").fetch_one(&a.db).await.unwrap();
+    assert_eq!(queued,1);
+    let unsubscribe = subscriptions::test_unsubscribe_token(&a,subscriber);
+    assert_eq!(request(&a,"POST","/public/subscriptions/unsubscribe",json!({"id":subscriber,"token":unsubscribe}),None).await.0,StatusCode::OK);
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM status_subscription_deliveries")
+        .fetch_one(&a.db).await.unwrap();
+    assert_eq!(remaining,0);
+}
 fn input() -> Value {
     json!({"name":"test website","kind":"http","target":"http://127.0.0.1:19191/health","interval_seconds":20,"timeout_seconds":5,"failure_threshold":2,"recovery_threshold":2,"public":true})
 }

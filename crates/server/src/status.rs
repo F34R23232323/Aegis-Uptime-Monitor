@@ -218,7 +218,10 @@ pub struct PageInput {
     pub announcement: String,
     #[serde(default)]
     pub footer_text: String,
+    #[serde(default = "subscriptions_default")]
+    pub subscriptions_enabled: bool,
 }
+fn subscriptions_default() -> bool { true }
 fn default_support_label() -> String { "Contact support".into() }
 fn default_layout() -> String {
     "standard".into()
@@ -326,9 +329,9 @@ async fn save_page(a: &App, u: &User, id: Uuid, p: PageInput, create: bool) -> R
     validate_ids(&a.db, "status_resources", &p.resource_ids).await?;
     let mut tx = a.db.begin().await?;
     if create {
-        sqlx::query("INSERT INTO status_pages(id,slug,title,description,accent,monitor_ids,resource_ids,tabs,theme,logo_url,support_url,announcement,layout,metrics_settings,support_label,footer_text) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).bind(p.support_label).bind(p.footer_text).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO status_pages(id,slug,title,description,accent,monitor_ids,resource_ids,tabs,theme,logo_url,support_url,announcement,layout,metrics_settings,support_label,footer_text,subscriptions_enabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).bind(p.support_label).bind(p.footer_text).bind(p.subscriptions_enabled).execute(&mut *tx).await?;
     } else {
-        let count=sqlx::query("UPDATE status_pages SET slug=$2,title=$3,description=$4,accent=$5,monitor_ids=$6,resource_ids=$7,tabs=$8,theme=$9,logo_url=$10,support_url=$11,announcement=$12,layout=$13,metrics_settings=$14,support_label=$15,footer_text=$16,updated_at=now() WHERE id=$1").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).bind(p.support_label).bind(p.footer_text).execute(&mut *tx).await?.rows_affected();
+        let count=sqlx::query("UPDATE status_pages SET slug=$2,title=$3,description=$4,accent=$5,monitor_ids=$6,resource_ids=$7,tabs=$8,theme=$9,logo_url=$10,support_url=$11,announcement=$12,layout=$13,metrics_settings=$14,support_label=$15,footer_text=$16,subscriptions_enabled=$17,updated_at=now() WHERE id=$1").bind(id).bind(p.slug).bind(p.title).bind(p.description).bind(p.accent).bind(p.monitor_ids).bind(p.resource_ids).bind(p.tabs).bind(p.theme).bind(p.logo_url).bind(p.support_url).bind(p.announcement).bind(p.layout).bind(p.metrics_settings).bind(p.support_label).bind(p.footer_text).bind(p.subscriptions_enabled).execute(&mut *tx).await?.rows_affected();
         if count == 0 {
             return Err(Error(StatusCode::NOT_FOUND, "Status page not found".into()));
         }
@@ -544,7 +547,7 @@ async fn public_projection(a: &App, slug: &str) -> Result<Json<Value>> {
         );
     }
     Ok(Json(
-        json!({"title":page.get::<String,_>("title"),"slug":slug,"description":page.get::<String,_>("description"),"accent":page.get::<String,_>("accent"),"brand":a.brand,"theme":page.get::<String,_>("theme"),"logo_url":page.get::<String,_>("logo_url"),"support_url":page.get::<String,_>("support_url"),"support_label":page.get::<String,_>("support_label"),"footer_text":page.get::<String,_>("footer_text"),"announcement":page.get::<String,_>("announcement"),"tabs":page.get::<Value,_>("tabs"),"resources":resource_data,"monitors":monitors,"incidents":incidents,"maintenance":maintenance,"overall_state":overall_public(&overall),"layout":page.get::<String,_>("layout"),"metrics_settings":settings,"metrics_summary":{"uptime":summary_uptime,"latency":summary_latency},"generated_at":Utc::now()}),
+        json!({"title":page.get::<String,_>("title"),"slug":slug,"description":page.get::<String,_>("description"),"accent":page.get::<String,_>("accent"),"brand":a.brand,"theme":page.get::<String,_>("theme"),"logo_url":page.get::<String,_>("logo_url"),"support_url":page.get::<String,_>("support_url"),"support_label":page.get::<String,_>("support_label"),"footer_text":page.get::<String,_>("footer_text"),"announcement":page.get::<String,_>("announcement"),"tabs":page.get::<Value,_>("tabs"),"resources":resource_data,"monitors":monitors,"incidents":incidents,"maintenance":maintenance,"overall_state":overall_public(&overall),"layout":page.get::<String,_>("layout"),"metrics_settings":settings,"metrics_summary":{"uptime":summary_uptime,"latency":summary_latency},"subscriptions_enabled":page.get::<bool,_>("subscriptions_enabled") && std::env::var("SMTP_HOST").is_ok_and(|host|!host.trim().is_empty()) && std::env::var("SMTP_FROM").is_ok_and(|from|crate::notifications::email_address(&from)),"generated_at":Utc::now()}),
     ))
 }
 
@@ -668,6 +671,9 @@ async fn save_incident(
     }
     if !i.public_message.trim().is_empty() {
         sqlx::query("INSERT INTO incident_updates(id,incident_id,phase,message,actor_id) VALUES($1,$2,$3,$4,$5)").bind(Uuid::new_v4()).bind(id).bind(&i.phase).bind(&i.public_message).bind(u.id).execute(&mut *tx).await?;
+    }
+    if i.published {
+        crate::subscriptions::queue_incident(&mut tx, a, id, &i).await?;
     }
     audit(
         &mut tx,

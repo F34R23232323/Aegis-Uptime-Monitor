@@ -375,6 +375,8 @@ async fn prune(a: &App) -> Result<()> {
         "DELETE FROM admin_audit_events WHERE created_at<now()-interval '365 days'",
         "DELETE FROM auth_audit_events WHERE created_at<now()-interval '90 days'",
         "DELETE FROM notification_deliveries WHERE created_at<now()-interval '90 days' AND state!='pending'",
+        "DELETE FROM status_subscriptions WHERE NOT confirmed AND created_at<now()-interval '7 days'",
+        "DELETE FROM status_subscription_deliveries WHERE created_at<now()-interval '30 days' AND state!='pending'",
     ] {
         sqlx::query(query).execute(&a.db).await?;
     }

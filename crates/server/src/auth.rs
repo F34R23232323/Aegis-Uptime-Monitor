@@ -185,10 +185,10 @@ pub async fn setup(
     tx.commit().await?;
     session(&app, id).await
 }
-async fn rate_limit(app: &App, email: &str) -> Result<()> {
+pub(crate) async fn rate_limit(app: &App, email: &str) -> Result<()> {
     let attempts:i32=sqlx::query_scalar("INSERT INTO login_attempts(key,attempts) VALUES($1,1) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN login_attempts.window_start<now()-interval '15 minutes' THEN 1 ELSE login_attempts.attempts+1 END, window_start=CASE WHEN login_attempts.window_start<now()-interval '15 minutes' THEN now() ELSE login_attempts.window_start END RETURNING attempts").bind(hash(email)).fetch_one(&app.db).await?;
     if attempts
-        > if email == "global-login-budget" {
+        > if email.starts_with("global-") {
             200
         } else {
             10
