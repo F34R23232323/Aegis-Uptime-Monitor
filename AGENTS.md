@@ -190,7 +190,9 @@ Before every commit:
 5. Use an imperative, concise subject describing action and outcome, preferably `area: action and outcome` (for example `checks: reject unsafe redirect targets` or `docs: document agent deployment and Git workflow`). Add a body with motivation, behavior, migration or verification for nontrivial work.
 6. Confirm the commit exists and the worktree contains only expected remaining changes. Tell the user the commit hash and verification summary.
 
-Never amend, force-push, reset or rewrite shared history unless explicitly requested. Do not create a GitHub remote or push without the repository destination or prior authorization. If Git identity is unset, ask for the desired identity instead of inventing one. If Git is unavailable or commits are blocked, give the exact reason and leave a reviewable diff.
+Never amend, force-push, reset or rewrite shared history unless explicitly requested. Do not create a GitHub remote without the user's repository destination. If Git identity is unset, ask for the desired identity instead of inventing one. If Git is unavailable or commits are blocked, give the exact reason and leave a reviewable diff.
+
+**GitHub push permission is conditional: an AI may push commits only when it is 100% sure the push is okay.** Before pushing, confirm the destination repository and branch are the intended ones, inspect the exact commits and file changes being sent, verify that no secrets or unrelated user work are included, run the relevant checks, and confirm the remote branch can be advanced without overwriting others' commits. Use an ordinary push only; never force-push under this permission. If any fact is unknown, a check fails, the remote has unexpected commits, or there is any doubt about safety or destination, stop before pushing and ask the user. A successful local commit alone is not permission to push.
 
 ## Security review triggers
 
