@@ -1,168 +1,259 @@
+<div align="center">
+
 # Aegis Monitor
 
-A dark-first, self-hosted monitoring workspace with a Rust control plane, outbound Rust agents, PostgreSQL history, and a SvelteKit dashboard. No Redis, browser-driven monitoring, default accounts, or production demo data.
+**Self-hosted uptime monitoring for the services and servers you run.**
 
-**Status:** integrated core with the status-platform upgrade and a hardened HTTPS deployment profile; see [known limitations](docs/limitations.md) before production use. This is not an implementation of every optional feature in the original brief.
+Rust checks and agents · PostgreSQL history · SvelteKit dashboard · Public status pages
 
-## Quick start
+[Get started](#self-host-in-5-steps) · [Screenshots](#screenshots) · [Features](#features) · [Troubleshooting](#troubleshooting) · [Documentation](#documentation)
 
-Requirements: Docker Engine with Compose 2.24.4+, 2+ GB free RAM for normal operation (4+ GB for builds), and a Linux host. Rust builds need a C compiler; development needs stable Rust 1.100+, Node 24, and PostgreSQL 17.
+</div>
 
-```sh
+> [!NOTE]
+> Aegis is a single-workspace deployment with one active API scheduler. Review the [current limitations](docs/limitations.md) before using it for critical alerting. A separate observer is needed to detect a complete outage of the machine hosting Aegis.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Checks** | HTTP/HTTPS, JSON API, TCP, DNS, TLS, Redis PING, SMTP greeting, PostgreSQL handshake, push heartbeats, Docker, PM2 and host resource checks |
+| **Alerts** | Durable Discord and JSON webhook deliveries with routing, retries and cooldowns |
+| **Status** | Public-safe resources, branded status pages, incidents, maintenance, uptime and RSS |
+| **Host** | Linux with Docker Engine and Compose 2.24.4+; production HTTPS through Caddy |
+| **Storage** | PostgreSQL 17; no Redis service required |
+| **License** | [GNU AGPL v3](LICENSE) (`AGPL-3.0-only`) |
+
+## Screenshots
+
+These are captures of the **real Svelte interface with synthetic example data**. They do not show a production instance or actual uptime.
+
+![Aegis overview with monitor states, uptime and an incident](docs/screenshots/dashboard.png)
+
+<details>
+<summary><strong>Monitor list</strong> — status, latency, uptime and recent checks</summary>
+
+![Aegis monitor list](docs/screenshots/monitors.png)
+
+</details>
+
+<details>
+<summary><strong>First-run setup</strong> — create the owner account</summary>
+
+![Aegis first-run owner setup](docs/screenshots/setup.png)
+
+</details>
+
+## Self-host in 5 steps
+
+This is the shortest path to a **local, loopback-only** instance. Use a Linux host with Docker Engine, Compose 2.24.4 or newer, and at least 2 GB free RAM (4 GB or more while building). Only the gateway is published, on `127.0.0.1:8080`.
+
+### 1. Get the project
+
+~~~sh
+git clone https://github.com/F34R23232323/Aegis-Uptime-Monitor.git
+cd Aegis-Uptime-Monitor
+~~~
+
+If you already have the source, run the remaining commands from its root directory.
+
+### 2. Make your environment file
+
+~~~sh
 cp .env.example .env
-# Paste independently generated values into .env:
-openssl rand -hex 24 # POSTGRES_PASSWORD (URL-safe)
-openssl rand -hex 32 # ENCRYPTION_KEY
-# APP_URL must exactly match the browser origin, without a trailing slash.
+openssl rand -hex 24   # Copy into POSTGRES_PASSWORD
+openssl rand -hex 32   # Copy into ENCRYPTION_KEY
+~~~
+
+Edit `.env` and paste the **two independently generated values**. Keep the file private and out of Git. Leave `APP_URL=http://localhost:8080` for this local setup. If you change `PORT`, change `APP_URL` to the exact browser origin too, with no trailing slash.
+
+### 3. Build and start
+
+~~~sh
+docker compose config --quiet
 docker compose up -d --build
 docker compose ps
-```
+~~~
 
-Open **http://localhost:8080**. The gateway binds loopback by default. If connecting remotely before TLS is installed, use an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 user@server`). Create the initial owner (password ≥12 characters). Public registration then closes. Use Settings to create Admin/Viewer members. A viewer cannot mutate resources or inspect notification credentials.
+The first build can take several minutes. The API applies database migrations before it becomes ready.
 
-Only the gateway is published. PostgreSQL, API, and frontend have no public host ports. Migrations run automatically before the API accepts traffic. Existing monitors and queued alerts survive restarts. Do not scale the API service: a PostgreSQL session lock enforces one active scheduler; losing that connection terminates the process for safe restart.
+### 4. Open the dashboard
 
-## First monitors
+On the host, visit **[http://localhost:8080](http://localhost:8080)**. For a remote Linux server, keep the loopback binding and tunnel from your own computer:
 
-1. **Monitors → Add monitor**. Choose HTTP/HTTPS or TCP. For TCP use `hostname:port` (IPv6: `[address]:port`). HTTP supports GET/HEAD, expected status and optional bounded keyword matching. Redirects are deliberately not followed; monitor the final URL.
-2. Use **Test connection**, then save. Checks run every 20 seconds or longer with jitter. Defaults require two consecutive failures to open an incident, and two successes to recover.
-3. For private/LAN targets, explicitly set `ALLOW_PRIVATE_TARGETS=true` and restart the API. This grants trusted admins access to the control plane’s network, including loopback/metadata endpoints. Keep false on public or shared deployments; add egress firewall rules for stronger isolation.
-4. DNS checks support A, AAAA, CNAME, MX, TXT, NS and SRV with exact expected-value matching. JSON API checks assert a JSON Pointer value; Redis PING, SMTP greeting and PostgreSQL SSL negotiation checks use fixed protocol probes. HTTP/JSON support encrypted bearer/basic credentials and custom headers; never put secrets in URLs or metadata. These protocol checks verify reachability/handshake, not authenticated database queries or email delivery. TLS checks validate the chain/hostname and fail below the configured days remaining. Push monitors produce a one-time secret URL: call `curl -fsS -X POST "$AEGIS_PUSH_URL"` at the expected interval. Do not put the URL in shared logs or source code.
-5. See detail pages for actual checks, failures, latency, observed coverage, incidents and annotations. Pausing and maintenance exclude time from availability. Definitions are in [architecture](docs/architecture.md).
+~~~sh
+ssh -L 8080:127.0.0.1:8080 user@your-server
+~~~
 
-## Discord and webhooks
+Then visit `http://localhost:8080` locally. Create the first **Owner** account with a password of at least 12 characters. Public account creation closes after that first setup.
 
-Notifications → Add channel → Discord webhook. Paste an HTTPS `discord.com/api/webhooks/...` URL from your Discord channel settings. It is AES-256-GCM encrypted at rest and never returned. **Send test** queues a real delivery; inspect the history for `sent` or retry/failure. Edit destinations in place, select DOWN/RECOVERED/DEGRADED events and monitor routes, and set a per-monitor failure cooldown. Empty monitor routes mean all monitors. The Discord message designer supports validated template variables, editable fields, colors, footer, timestamp, avatar and thumbnail, plus a server-rendered preview. Saving never sends a message; Send test does. Queued deliveries retain their template snapshot. Recovery is never suppressed by the failure cooldown. Removing the last explicitly routed monitor disables that channel instead of turning it into an all-monitor destination. DEGRADED is reserved; current checks primarily emit UP/DOWN. Provider failures retry eight times with exponential backoff, including after a restart. Generic JSON webhooks are also supported.
+### 5. Add a monitor
 
-Discord mentions are off by default; each channel can allow user, role, or @everyone/@here mentions written in message content. Template variables cannot add pings. Alerts include name, state, safe reason, timestamp and a dashboard link; they intentionally omit target URLs, which may contain secrets. Delivery is **at least once**: a process crash after the provider accepts a request but before the DB commit may repeat a message. State transitions have durable incident/event deduplication.
+Go to **Monitors → Add monitor**, choose HTTP/HTTPS or TCP, enter the target, run **Test connection**, then save. Checks start at a minimum 20-second interval; the default incident thresholds require two failures to go down and two successes to recover. The dashboard, incident history and monitor detail update from server-side checks even when the browser is closed.
 
-## Enroll Ubuntu / Hetzner agents
+> [!IMPORTANT]
+> Private/LAN/loopback targets are blocked by default. Set `ALLOW_PRIVATE_TARGETS=true` only if trusted administrators should be able to probe networks reachable from the API container. Restart the API after changing it. For a public or shared installation, also consider network egress rules.
 
-Servers → Connect server → name → save the one-time credentials. The agent needs outbound HTTPS to APP_URL and no inbound port. Use a separate agent for each OS user when PM2 daemons run as different users.
+## Put it on a public HTTPS domain
 
-```sh
-cargo build --release -p aegis-agent
-sudo install target/release/aegis-agent /usr/local/bin/aegis-agent
-sudo install -d -m 0750 -o bot -g bot /etc/aegis
-sudo install -m 0600 -o bot -g bot deploy/agent.env.example /etc/aegis/agent.env
-# Edit /etc/aegis/agent.env: URL, token, PM2 home and absolute pm2 binary.
-# Edit service User/Group/ReadWritePaths to match your PM2 owner.
-sudo install -m 0644 deploy/aegis-agent.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now aegis-agent
-journalctl -u aegis-agent -f
-```
+Use this path after the local flow is understood. You need a domain pointing at the Linux host and inbound TCP 80/443 (UDP 443 is optional). The production overlay replaces the loopback gateway port with Caddy, which obtains and renews certificates when DNS and networking are set up correctly.
 
-- PM2: the agent executes the configured binary with the fixed argument `jlist`, a five-second deadline and a 1 MiB output cap. It never executes monitor-supplied commands. Set `AEGIS_PM2_HOMES=/home/bot/.pm2:/home/bot/.pm2-other`. Homes must be accessible to the service account. An existing-app PM2 systemd template is in `deploy/pm2-bot.service`; review its user/binary paths, and run `pm2 save` as that owner before enabling it. Avoid pointing at an absent PM2 home: PM2 may start a new daemon. The service needs Node/PM2 installed with the correct absolute path and PATH for Node; see [operations](docs/operations.md).
-- Docker: opt in with `AEGIS_DOCKER=true`. The agent uses Bollard’s local Docker Engine API for discovery, inspection, HEALTHCHECK and restart counts. Docker socket access is effectively root access; a socket mount with `:ro` does not restrict API methods. Never expose Docker’s API publicly or mount it into the API/frontend. Prefer an operator-maintained restricted local socket proxy permitting only required GET endpoints. See operations for alternatives.
-- After connecting, **Monitor** individual discovered containers/apps, or **Monitor host health**. Discovery alone does not create checks or alerts. Agent last-seen is independent of service checks. Missing heartbeats (>60 seconds) fail associated host/service checks at their next scheduled evaluation, subject to thresholds.
-- A running container without a Docker HEALTHCHECK is only a liveness signal. Pair it with an HTTP/TCP monitor for application health.
-- **A server cannot report its own complete outage.** Run Aegis elsewhere (or use an independent external observer). Add a host monitor for each agent to enable heartbeat alerts.
+1. In `.env`, set `AEGIS_DOMAIN=status.example.com`, `APP_URL=https://status.example.com` and `APP_ENV=production`. Keep the database and encryption secrets from the local setup or generate them for a fresh installation.
+2. Generate a separate setup token with `openssl rand -hex 32` and put it in `BOOTSTRAP_TOKEN`. Do not place it in a command line, screenshot or log.
+3. Start the production stack:
 
-Optional Compose agent: set `AEGIS_AGENT_TOKEN`, a reachable `AEGIS_URL`, and `ALLOW_INSECURE_HTTP=true` only for isolated local HTTP development, then `docker compose --profile agent up -d --build agent`. Its host metrics describe its container/namespace; use systemd for full host visibility. PM2 and Docker adapters are disabled in this isolated profile.
+   ~~~sh
+   docker compose -f compose.yaml -f compose.production.yaml config --quiet
+   docker compose -f compose.yaml -f compose.production.yaml up -d --build
+   ~~~
 
-## Status pages & planned work
+4. Open your HTTPS domain and enter the bootstrap token while creating the first Owner. After setup, remove `BOOTSTRAP_TOKEN` from `.env` and recreate the API with the same Compose files:
 
-**Premade monitors** has live component views for Cloudflare, Proton (including VPN), GitHub, Vercel, Discord, Atlassian Developer, Bitbucket, Trello, DigitalOcean, Twilio, 1Password, and Google Cloud. Choose components to create JSON monitors, or create a public status page with one resource per selected component. The Statuspage providers use documented public v2 summary endpoints and match components by ID. Google Cloud uses its public product catalog and incident history; its statuses mean no active *public* incident was reported for a product and do not reflect project-specific Service Health. No API key is needed for these public feeds. Provider reports can lag or differ from availability at your location. Microsoft 365 requires a tenant-authorized Microsoft Graph integration with `ServiceHealth.Read.All`; Hetzner's status site and feed need a different connector and are linked in the catalog but are not yet component monitor presets.
+   ~~~sh
+   docker compose -f compose.yaml -f compose.production.yaml up -d --force-recreate api
+   ~~~
 
-Make monitors public eligible in advanced settings. In **Status pages → Resources**, create public-safe service names, group them, and link one or more public monitors. Automatic status aggregates underlying checks; manual operational/degraded/partial outage/major outage/maintenance/unknown overrides require a public reason and can expire. Overrides do not rewrite check history or uptime. Unmeasured resources show no measured uptime.
+Existing installations need a database and matching encryption-key backup before upgrading. Follow the [upgrade and backup guide](docs/operations.md#status-platform-upgrade). Never use `docker compose down -v` during an upgrade: it deletes the PostgreSQL volume. The API, web app and database should remain private behind the supplied gateway.
 
-Create a page with a slug, description, logo, accent, theme, support link and announcement. Select/reorder resources and arrange Overview, Incidents, Maintenance, Metrics and custom plain-text tabs. Public URL: `/status/<slug>`; RSS: `/api/v1/public/status/<slug>/feed`. Public content is server-rendered, refreshes every 30 seconds, and never includes targets, credentials, internal notes or raw errors. Public visibility requires explicit eligibility and page selection. Page/resource edits take effect on the next refresh.
+## Features
 
-**Incidents** supports manual incidents and editing/publishing safe summaries of measured incidents, severity, investigating/identified/monitoring/resolved phases and timestamped editorial updates. Publishing requires an explicitly selected status page. Automatic incidents stay private until published; raw failures remain private. A measured incident cannot be manually resolved while its monitor is unhealthy. A resource override only changes presentation.
+<details>
+<summary><strong>Checks and uptime</strong></summary>
 
-**Maintenance** supports create/edit/cancel for monitors/resources and separate public-safe notices on selected pages. Telemetry continues while new incidents/alerts are suppressed. Existing incidents await confirmed recovery. Resource membership is expanded when the window is saved; edit/save again after changing resource membership. Availability excludes maintenance samples.
+- HTTP GET/HEAD checks with expected status, optional keyword matching and bounded redirects; JSON API checks with JSON Pointer assertions.
+- TCP, DNS (A, AAAA, CNAME, MX, TXT, NS, SRV), TLS certificate/expiry, Redis PING, SMTP greeting and PostgreSQL SSL negotiation probes. The fixed protocol probes test reachability or handshake, not a database query or email delivery.
+- Push heartbeats with one-time secret URLs for cron jobs and external tasks. Keep push URLs out of source control and shared logs.
+- Failure and recovery thresholds, bounded retries, pause, maintenance, check history, latency and coverage-aware uptime. Unknown time is not shown as 100% uptime.
+- Raw-check retention is configurable per monitor from 7 to 365 days; the default is 90 days.
 
-## Production HTTPS deployment
+</details>
 
-Set a real DNS hostname pointing to your server and allow inbound TCP 80/443 (UDP 443 optional). In `.env`, set `AEGIS_DOMAIN=status.example.com`, `APP_URL=https://status.example.com`, `APP_ENV=production`, and independently generated database/encryption secrets. Generate `BOOTSTRAP_TOKEN` with `openssl rand -hex 32`; it is required to claim the first production owner.
+<details>
+<summary><strong>Servers, Docker and PM2</strong></summary>
 
-```sh
-docker compose -f compose.yaml -f compose.production.yaml config --quiet
-docker compose -f compose.yaml -f compose.production.yaml up -d --build
-```
+- Outbound Rust agents report host CPU, memory, disk and network snapshots. They need outbound HTTPS to Aegis, not an inbound port.
+- Optional Docker and PM2 discovery. Choose individual services or host health to create monitors; discovery alone does not generate checks or alerts.
+- Missing agent heartbeats affect associated monitors. A running container without a Docker HEALTHCHECK is only a liveness signal; add HTTP/TCP checks for application health.
+- Docker socket access is effectively host-level access, even with a read-only mount. See [agent deployment](deploy/agent-hetzner.md) and [safe Docker access](docs/operations.md#safe-docker-access).
 
-Open your HTTPS domain and enter the bootstrap token when creating the owner. Keep it out of screenshots/logs; remove it from `.env` after setup and recreate the API. No open registration is enabled afterward. The production overlay removes the loopback gateway port and runs Caddy with persistent certificates. Caddy obtains/renews TLS when operator-owned DNS and network requirements are met. The API refuses HTTP APP_URL in production. Sessions use Secure/HttpOnly cookies; SvelteKit supplies nonce-based script CSP. Session list, revoke and rotation are in Settings → Security; password changes revoke all sessions.
+</details>
 
-For an existing installation, take an off-host DB/key backup, review [migration notes](docs/operations.md#status-platform-upgrade), then use the same Compose files/project/volumes with `up -d --build`. Never use `down -v` during an upgrade. Alternatively use host Caddy with [deploy/Caddyfile](deploy/Caddyfile). Custom public domains need operator proxy/routing configuration; automatic per-page domain provisioning is not implemented.
+<details>
+<summary><strong>Notifications and incidents</strong></summary>
 
-Keep admin access restricted to trusted users, use off-host encrypted backups, prompt updates and non-root agents. [Security guidance](docs/security.md). This remains a single-workspace, single-active-scheduler deployment; review [limitations](docs/limitations.md) for missing optional features and scale boundaries.
+- Discord embeds with validated templates, preview, event routing, monitor selection, mention controls and failure cooldowns; generic JSON webhooks are also supported.
+- **Send test** queues a real delivery. Saving a channel or previewing an embed does not send one.
+- Durable jobs retry provider failures across restarts. Delivery is at least once, so a crash at the wrong moment can repeat a provider message.
+- Automatic measured incidents stay private until you explicitly publish safe editorial text to a selected status page.
 
-## Local development and verification
+</details>
 
-```sh
-# Start an isolated development DB (do not expose it beyond loopback):
-docker run -d --name aegis-dev-db -p 127.0.0.1:5432:5432 \
-  -e POSTGRES_USER=aegis -e POSTGRES_PASSWORD=local-development-only \
-  -e POSTGRES_DB=aegis postgres:17-alpine
-export DATABASE_URL=postgresql://aegis:local-development-only@localhost:5432/aegis
-export ENCRYPTION_KEY="$(openssl rand -hex 32)"
-export APP_URL=http://localhost:5173
-export ALLOW_PRIVATE_TARGETS=true # local controlled targets only
-cargo run -p aegis-server
-# second terminal
-cd apps/web
-npm ci
-npm run dev
-```
+<details>
+<summary><strong>Public status pages</strong></summary>
 
-The Vite proxy forwards `/api` to Rust on :3001. Native PostgreSQL integration tests use temporary databases, requiring a role with CREATEDB:
+- Public-safe resources can combine eligible monitors, use manual status overrides with reasons and expiry, and show measured uptime only where evidence exists.
+- Brand pages with a slug, theme, accent, logo, support link, announcement and ordered Overview, Incidents, Maintenance, Metrics or plain-text tabs.
+- Publish incident updates and maintenance notices selectively. Public pages exclude targets, credentials, raw errors, private notes and host inventory.
+- Server-rendered page: `/status/<slug>`. RSS feed: `/api/v1/public/status/<slug>/feed`.
+- Premade component choices are available for several public provider status feeds. Provider-reported status can lag or differ from local availability; see the [scope and limitations](docs/limitations.md).
 
-```sh
+</details>
+
+<details>
+<summary><strong>Security and operations</strong></summary>
+
+- One-time first-owner enrollment, Owner/Admin/Viewer roles, Argon2id passwords, revocable sessions, exact-Origin mutation checks and encrypted saved webhook/monitor credentials.
+- Same-origin API requests, public-safe API projections, bounded probes, private-target policy and a production HTTPS profile.
+- Guarded backup/restore scripts, internal health endpoints and an optional bearer-protected Prometheus aggregate exporter.
+- A single active scheduler is enforced by a PostgreSQL advisory lock. Run an independent observer if you need to detect the Aegis host's complete outage.
+
+</details>
+
+## Day-two operations
+
+| Task | Command or location |
+| --- | --- |
+| Check health | `docker compose ps` and `docker compose logs --tail=100 api web gateway` |
+| Stop without deleting data | `docker compose down` |
+| Upgrade | Back up DB and encryption key; review [operations](docs/operations.md); rebuild with the same Compose files and project/volumes |
+| Back up | `deploy/bin/backup /absolute/secure/path/aegis.sql.gz`; encrypt and store off-host |
+| Restore | `deploy/bin/restore --into-empty-database /absolute/secure/path/aegis.sql.gz` with API stopped |
+| Agent enrollment | **Servers → Connect server**; save the one-time token and follow [agent setup](deploy/agent-hetzner.md) |
+| Account recovery | Use the documented owner CLI flow in [operations](docs/operations.md), not an email reset form |
+
+For production, include `-f compose.yaml -f compose.production.yaml` in Compose commands. Keep the encryption key with the matching database backup: changing it without re-encrypting stored credentials makes them unreadable. Changing `POSTGRES_PASSWORD` in `.env` does not alter an existing PostgreSQL role.
+
+## Troubleshooting
+
+<details>
+<summary><strong>Containers fail to start or stay unhealthy</strong></summary>
+
+Run `docker compose ps` and `docker compose logs --tail=150 db api web gateway`. Confirm both required secrets are set in `.env`, the host has enough free RAM and disk, and the database becomes healthy. The API waits for migrations. Do not delete the data volume to repair startup.
+
+</details>
+
+<details>
+<summary><strong>Login fails with an Origin or cookie error</strong></summary>
+
+`APP_URL` must match the browser's scheme, hostname and port exactly, without a trailing slash. For production, use the HTTPS domain and the production Compose overlay; for local setup, use `http://localhost:8080` or an SSH tunnel to it. Recreate the API/web containers after changing the origin.
+
+</details>
+
+<details>
+<summary><strong>Monitor stays pending, unknown or down</strong></summary>
+
+Check the monitor target, DNS and outbound connectivity from the API host, failure/recovery thresholds and `docker compose logs api`. Private/reserved addresses require the deliberate `ALLOW_PRIVATE_TARGETS` opt-in. HTTP redirects can be bounded and validated; verify the final target. Unknown coverage is never counted as healthy.
+
+</details>
+
+<details>
+<summary><strong>Agent is offline or Docker/PM2 inventory is missing</strong></summary>
+
+Verify agent HTTPS trust, token, outbound firewall and `journalctl -u aegis-agent -f`. The systemd service must run as the correct PM2 user with accessible homes and a valid PM2/Node path. Docker discovery needs explicit opt-in and a carefully controlled local Docker API. The isolated Compose agent reports container/namespace metrics, not full host metrics.
+
+</details>
+
+<details>
+<summary><strong>Discord/webhook delivery is pending or failed</strong></summary>
+
+Inspect **Notifications → Delivery history**, the provider URL and permissions, and provider rate limits. A test action queues delivery; it does not promise immediate acceptance. Saved webhook secrets are not returned by GET APIs. Failed jobs can be retried after the destination is repaired.
+
+</details>
+
+<details>
+<summary><strong>Public page does not show a monitor or incident</strong></summary>
+
+Mark the monitor public eligible, link it to a public-safe resource, and select that resource on the page. Publish incidents explicitly to the intended page with safe copy. Resource overrides affect presentation but do not create check evidence. Public content refreshes about every 30 seconds.
+
+</details>
+
+## Development
+
+Rust development needs a C compiler and stable Rust 1.100+. The web app needs Node 24. Native integration tests use a disposable PostgreSQL 17 database with a role able to create temporary databases. The Vite dev server proxies `/api` to Rust on `127.0.0.1:3001`.
+
+~~~sh
+# Repository root
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-DATABASE_URL=postgresql://aegis:local-development-only@localhost:5432/aegis cargo test --workspace
-cd apps/web
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+
+# apps/web
+npm ci
 npm run lint
 npm run check
 npm run test
 npm run build
-npx playwright install chromium
-# API + Vite running, fresh development DB, private targets opted in:
-npm run e2e
-# For a pre-existing owner set TEST_OWNER_EMAIL and TEST_OWNER_PASSWORD.
-# E2E creates real persistent test resources; use only a disposable database.
-cd ../..
-docker compose config --quiet
-```
+~~~
 
-E2E uses actual HTTP/Webhook servers on 19191/19192, waits for real scheduler cycles, causes an outage, verifies incident/notification/recovery, publishes a public page, and tests mobile overflow. Rust integration tests exercise a Discord-shaped mock with provider failure/retry, CSRF, Viewer restrictions, encrypted secrets, durable incident deduplication and agent token rotation/idempotency. See [verification](docs/verification.md) for this build’s executed results.
+See [verification](docs/verification.md) for previously executed checks and their limits. Playwright E2E creates persistent records and must run only against a disposable instance. To regenerate README screenshots, start Vite from `apps/web`, install Playwright Chromium with `npx playwright install chromium`, then run `node scripts/capture-readme.mjs` there. The capture script intercepts API requests with synthetic data and does not need a real account or database.
 
-## Recovery, backups & troubleshooting
+## Documentation
 
-```sh
-# Local-only recovery; inject temporary environment without placing password in shell history:
-read -r -p 'Email: ' RECOVERY_EMAIL
-read -r -s -p 'New password: ' RECOVERY_PASSWORD
-export RECOVERY_EMAIL RECOVERY_PASSWORD
-docker compose run --rm -e RECOVERY_EMAIL -e RECOVERY_PASSWORD api reset-password
-unset RECOVERY_EMAIL RECOVERY_PASSWORD
-# Backup (encrypt off-host; keep the matching encryption key separately):
-deploy/bin/backup /absolute/secure/path/aegis.sql.gz
-# Restore only into an empty replacement DB, API stopped; never drops data:
-deploy/bin/restore --into-empty-database /absolute/secure/path/aegis.sql.gz
-# See docs/operations.md for production Compose-file selection and restore ordering.
-```
-
-Changing ENCRYPTION_KEY without re-encrypting data makes saved webhook and monitor credentials unreadable: replace every encrypted credential after a planned rotation or restore the matching key. DB password changes require altering the existing PostgreSQL role as well as .env; POSTGRES_PASSWORD initializes new volumes only. `docker compose down` preserves data; `down -v` deletes it permanently.
-
-- Origin errors: APP_URL must exactly match scheme, hostname and port in the address bar. Restart API/web after edits.
-- Empty or pending checks: inspect `docker compose logs api`; verify DNS and egress connectivity, thresholds, and private-network policy. UNKNOWN coverage is never counted healthy.
-- Agent offline: verify HTTPS trust, token, outbound firewall and `journalctl`. Rotate tokens in Servers if leaked; update the agent environment and restart its service.
-- Notification pending/failed: inspect history; check the provider URL, its permissions and rate limits. GET APIs never reveal saved webhook secrets.
-- Container unhealthy: `docker compose ps` and logs; readiness includes DB migrations. Do not delete the persistent volume to “fix” startup.
-
-## Layout and routes
-
-```
-crates/core       domain validation, hysteresis, permissions, uptime
-crates/checks     bounded HTTP/JSON/TCP/DNS/TLS/protocol checks and target policy
-crates/server     Axum API/auth, SQLx, scheduler, incidents, delivery worker
-crates/agent      outbound heartbeat, sysinfo, Bollard, bounded PM2 adapter
-apps/web         SvelteKit 3 / Svelte 5 + TypeScript, Tailwind 4, Bits UI, Lucide
-migrations       versioned PostgreSQL schema
- deploy          Dockerfiles, Nginx/Caddy, agent env/systemd
- docs            architecture, operations, security, API and limitations
-```
-
-Dashboard `/`, `/monitors`, `/monitors/:id`, `/servers`, `/incidents`, `/analytics`, `/notifications`, `/status-pages`, `/maintenance`, `/settings`. Bootstrap/login appear automatically when required. Public `/status/:slug`. Versioned API `/api/v1`; liveness `/healthz`, authenticated DB-readiness `/api/v1/system`. API contracts: [docs/api.md](docs/api.md).
+- [Architecture and uptime semantics](docs/architecture.md)
+- [API routes and request contracts](docs/api.md)
+- [Operations, configuration and backups](docs/operations.md)
+- [Security and trust boundaries](docs/security.md)
+- [Verification record](docs/verification.md)
+- [Known limitations](docs/limitations.md)
+- [Change history](CHANGELOG.md)
+- [License](LICENSE)
