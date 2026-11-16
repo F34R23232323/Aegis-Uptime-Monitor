@@ -33,6 +33,7 @@
 	let quietStart = $state('');
 	let quietEnd = $state('');
 	let delay = $state(0);
+	let reminder = $state(0);
 	let previewEvent = $state('DOWN');
 	let payload = $state<DiscordPayload | null>(null);
 	let error = $state('');
@@ -83,6 +84,7 @@
 		quietStart = c?.quiet_start_minute == null ? '' : `${String(Math.floor(c.quiet_start_minute / 60)).padStart(2, '0')}:${String(c.quiet_start_minute % 60).padStart(2, '0')}`;
 		quietEnd = c?.quiet_end_minute == null ? '' : `${String(Math.floor(c.quiet_end_minute / 60)).padStart(2, '0')}:${String(c.quiet_end_minute % 60).padStart(2, '0')}`;
 		delay = c?.delay_seconds || 0;
+		reminder = c?.reminder_seconds || 0;
 		payload = null;
 		error = '';
 		open = true;
@@ -113,7 +115,8 @@
 				cooldown_seconds: cooldown,
 				quiet_start_minute: quietStart ? Number(quietStart.slice(0, 2)) * 60 + Number(quietStart.slice(3)) : null,
 				quiet_end_minute: quietEnd ? Number(quietEnd.slice(0, 2)) * 60 + Number(quietEnd.slice(3)) : null,
-				delay_seconds: delay
+				delay_seconds: delay,
+				reminder_seconds: reminder
 			});
 			open = false;
 			secret = '';
@@ -306,6 +309,8 @@
 			<p class="muted small-text">During quiet hours, queued alerts wait until the end time. Test messages bypass quiet hours.</p>
 			<label>DOWN escalation delay (seconds)<input type="number" bind:value={delay} min="0" max="86400" /></label>
 			<p class="muted small-text">To escalate, add a second channel with a delay. Pending DOWN messages are cancelled when the incident recovers.</p>
+			<label>Repeat DOWN reminder (seconds)<input type="number" bind:value={reminder} min="0" max="86400" step="60" /></label>
+			<p class="muted small-text">0 disables reminders. Otherwise enter at least 300 seconds. Reminders stop when the incident recovers.</p>
 		</fieldset>
 		{#if provider === 'discord'}<details open>
 				<summary>Discord message designer</summary>

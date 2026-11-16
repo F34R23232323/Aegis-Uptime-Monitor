@@ -36,7 +36,7 @@ If the directory is not yet a Git repository, initialize it only when the task a
 | `crates/server/src/status.rs` | Resources, public pages, editorial incidents, maintenance and audit |
 | `crates/server/src/integration.rs` | PostgreSQL-backed API and state integration tests |
 | `crates/agent/src/main.rs` | Outbound heartbeat, host metrics, Docker and PM2 inventory |
-| `migrations/` | Versioned SQLx PostgreSQL schema; nine migrations currently exist |
+| `migrations/` | Versioned SQLx PostgreSQL schema; ten migrations currently exist |
 | `apps/web/src/lib/App.svelte` | Authenticated workspace shell, navigation and data refresh |
 | `apps/web/src/lib/api.ts`, `public.ts` | Browser API contracts and public-page types/helpers |
 | `apps/web/src/lib/*.svelte` | Feature panels and shared UI |
@@ -77,7 +77,7 @@ The Servers UI creates a server record and reveals enrollment credentials once. 
 
 ### Alerts and notification channels
 
-Notification channels support Discord webhooks, generic JSON webhooks and SMTP email to one address per channel. Email uses API-side STARTTLS settings from `.env`. Discord templates have validated variables, editable embed fields, previews, event choices, explicit monitor routes, per-monitor DOWN cooldowns, UTC quiet hours and delayed DOWN escalation. Monitor dependency relationships defer child DOWN deliveries while the direct parent monitor is DOWN; incidents still record. Preview/save does not send a message; Send test queues actual delivery. Empty channel routes mean all monitors, and deleting the last explicitly routed monitor must not silently broaden a channel to all monitors. Recovery is eligible even when the DOWN cooldown is active. Jobs persist with template snapshots and retry after process restarts. A remote provider may receive a duplicate if the process crashes after provider acceptance but before DB acknowledgement.
+Notification channels support Discord webhooks, generic JSON webhooks and SMTP email to one address per channel. Email uses API-side STARTTLS settings from `.env`. Discord templates have validated variables, editable embed fields, previews, event choices, explicit monitor routes, per-monitor DOWN cooldowns, UTC quiet hours, delayed DOWN escalation and repeat reminders. Monitor dependency relationships defer child DOWN deliveries while the direct parent monitor is DOWN; incidents still record. Preview/save does not send a message; Send test queues actual delivery. Empty channel routes mean all monitors, and deleting the last explicitly routed monitor must not silently broaden a channel to all monitors. Recovery is eligible even when the DOWN cooldown is active. Jobs persist with template snapshots and retry after process restarts. A remote provider may receive a duplicate if the process crashes after provider acceptance but before DB acknowledgement.
 
 ### Status resources, pages and incidents
 

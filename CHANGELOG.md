@@ -2,6 +2,8 @@
 
 ## Status platform and deployment hardening
 
+- Repeat DOWN reminders for open incidents after successful initial delivery, with per-channel intervals and recovery cancellation.
+
 - Discord embed designer with validated variables, custom fields/colors/footer/images, safe preview, channel editing, event/monitor routes, failure cooldowns, queued template snapshots and failed-delivery retry.
 - Additional JSON assertion, Redis PING, SMTP greeting, PostgreSQL SSL negotiation, DNS record and agent CPU/memory/disk monitors. Encrypted HTTP bearer/basic/custom headers are stored separately and redacted.
 - Public resources/groups linked to eligible monitors; audited manual statuses with optional expiry. Overrides never rewrite observations or availability.

@@ -296,6 +296,8 @@ pub struct ChannelInput {
     pub quiet_end_minute: Option<i32>,
     #[serde(default)]
     pub delay_seconds: i32,
+    #[serde(default)]
+    pub reminder_seconds: i32,
 }
 fn yes() -> bool {
     true
@@ -315,6 +317,7 @@ async fn validate_channel(a: &App, c: &ChannelInput) -> Result<()> {
         || c.monitor_ids.len() > 200
         || !(0..=86400).contains(&c.cooldown_seconds)
         || !(0..=86400).contains(&c.delay_seconds)
+        || !(c.reminder_seconds == 0 || (300..=86400).contains(&c.reminder_seconds))
         || match (c.quiet_start_minute, c.quiet_end_minute) {
             (None, None) => false,
             (Some(start), Some(end)) => !(0..1440).contains(&start) || !(0..1440).contains(&end) || start == end,
@@ -401,7 +404,7 @@ pub async fn create_channel(
         .ok_or_else(|| bad("A destination is required"))?;
     let id = Uuid::new_v4();
     let mut tx = a.db.begin().await?;
-    sqlx::query("INSERT INTO notification_channels(id,name,provider,secret,enabled,template,events,monitor_ids,cooldown_seconds,quiet_start_minute,quiet_end_minute,delay_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)").bind(id).bind(c.name.trim()).bind(c.provider).bind(encrypt(&a,secret)?).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).bind(c.quiet_start_minute).bind(c.quiet_end_minute).bind(c.delay_seconds).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO notification_channels(id,name,provider,secret,enabled,template,events,monitor_ids,cooldown_seconds,quiet_start_minute,quiet_end_minute,delay_seconds,reminder_seconds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)").bind(id).bind(c.name.trim()).bind(c.provider).bind(encrypt(&a,secret)?).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).bind(c.quiet_start_minute).bind(c.quiet_end_minute).bind(c.delay_seconds).bind(c.reminder_seconds).execute(&mut *tx).await?;
     crate::status::audit(&mut tx, &u, "channel.created", id, json!({})).await?;
     tx.commit().await?;
     Ok(Json(json!({"id":id})))
@@ -421,7 +424,7 @@ pub async fn update_channel(
         .map(|s| encrypt(&a, s))
         .transpose()?;
     let mut tx = a.db.begin().await?;
-    let count=sqlx::query("UPDATE notification_channels SET name=$2,secret=coalesce($3,secret),enabled=$4,template=$5,events=$6,monitor_ids=$7,cooldown_seconds=$8,quiet_start_minute=$10,quiet_end_minute=$11,delay_seconds=$12,updated_at=now() WHERE id=$1 AND provider=$9").bind(id).bind(c.name.trim()).bind(secret).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).bind(c.provider).bind(c.quiet_start_minute).bind(c.quiet_end_minute).bind(c.delay_seconds).execute(&mut *tx).await?.rows_affected();
+    let count=sqlx::query("UPDATE notification_channels SET name=$2,secret=coalesce($3,secret),enabled=$4,template=$5,events=$6,monitor_ids=$7,cooldown_seconds=$8,quiet_start_minute=$10,quiet_end_minute=$11,delay_seconds=$12,reminder_seconds=$13,updated_at=now() WHERE id=$1 AND provider=$9").bind(id).bind(c.name.trim()).bind(secret).bind(c.enabled).bind(json!(c.template)).bind(c.events).bind(c.monitor_ids).bind(c.cooldown_seconds).bind(c.provider).bind(c.quiet_start_minute).bind(c.quiet_end_minute).bind(c.delay_seconds).bind(c.reminder_seconds).execute(&mut *tx).await?.rows_affected();
     if count == 0 {
         return Err(bad(
             "Channel missing or provider changed; create a new channel to change provider",

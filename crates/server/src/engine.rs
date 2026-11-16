@@ -24,6 +24,15 @@ pub fn start(a: Arc<App>) {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
     });
+    let reminders = a.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = enqueue_reminders(&reminders).await {
+                tracing::error!(error=?e,"reminder scheduling failed");
+            }
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+    });
     tokio::spawn(async move {
         loop {
             if let Err(e) = prune(&a).await {
@@ -223,8 +232,13 @@ async fn enqueue(
     let channels=sqlx::query("SELECT * FROM notification_channels c WHERE enabled AND $1=ANY(events) AND (cardinality(monitor_ids)=0 OR $2=ANY(monitor_ids)) AND ($1!='DOWN' OR NOT EXISTS(SELECT 1 FROM notification_deliveries d WHERE d.channel_id=c.id AND d.event='DOWN' AND d.payload->>'monitor_id'=($2::uuid)::text AND d.created_at>now()-make_interval(secs=>c.cooldown_seconds)))").bind(event).bind(id).fetch_all(&mut **tx).await?;
     for channel in channels {
         let payload = json!({"name":row.get::<String,_>("name"),"monitor_id":id,"incident_id":incident,"state":event,"reason":reason,"timestamp":chrono::Utc::now().to_rfc3339(),"duration":elapsed,"url":format!("{}/monitors/{}",a.origin,id),"template":channel.get::<Value,_>("template")});
-        sqlx::query("INSERT INTO notification_deliveries(id,channel_id,incident_id,event,payload,due_at) VALUES($1,$2,$3,$4,$5,now()+make_interval(secs=>$6)) ON CONFLICT(channel_id,incident_id,event) DO NOTHING").bind(Uuid::new_v4()).bind(channel.get::<Uuid,_>("id")).bind(incident).bind(event).bind(payload).bind(if event == "DOWN" { channel.get::<i32,_>("delay_seconds") } else { 0 }).execute(&mut **tx).await?;
+        sqlx::query("INSERT INTO notification_deliveries(id,channel_id,incident_id,event,payload,due_at) VALUES($1,$2,$3,$4,$5,now()+make_interval(secs=>$6)) ON CONFLICT(channel_id,incident_id,event,reminder_slot) DO NOTHING").bind(Uuid::new_v4()).bind(channel.get::<Uuid,_>("id")).bind(incident).bind(event).bind(payload).bind(if event == "DOWN" { channel.get::<i32,_>("delay_seconds") } else { 0 }).execute(&mut **tx).await?;
     }
+    Ok(())
+}
+pub(crate) async fn enqueue_reminders(a: &App) -> Result<()> {
+    sqlx::query("INSERT INTO notification_deliveries(id,channel_id,incident_id,event,payload,reminder_slot) SELECT gen_random_uuid(),c.id,i.id,'DOWN',jsonb_build_object('name',m.name,'monitor_id',m.id,'incident_id',i.id,'state','DOWN','reason',coalesce(m.last_error,'Incident remains open'),'timestamp',now(),'duration',concat(greatest(1,floor(extract(epoch from now()-i.started_at)/60)::integer),'m'),'url',concat($1::text,'/monitors/',m.id),'template',c.template,'reminder',true),floor(extract(epoch from now()-i.started_at)/c.reminder_seconds)::integer FROM incidents i JOIN monitors m ON m.id=i.monitor_id JOIN notification_channels c ON c.enabled AND 'DOWN'=ANY(c.events) AND (cardinality(c.monitor_ids)=0 OR m.id=ANY(c.monitor_ids)) WHERE i.ended_at IS NULL AND c.reminder_seconds>=300 AND now()-i.started_at>=make_interval(secs=>c.reminder_seconds) AND EXISTS(SELECT 1 FROM notification_deliveries first WHERE first.channel_id=c.id AND first.incident_id=i.id AND first.event='DOWN' AND first.reminder_slot=0 AND first.state='sent') AND NOT EXISTS(SELECT 1 FROM notification_deliveries existing WHERE existing.channel_id=c.id AND existing.incident_id=i.id AND existing.event='DOWN' AND existing.reminder_slot=floor(extract(epoch from now()-i.started_at)/c.reminder_seconds)::integer) ORDER BY i.started_at LIMIT 100 ON CONFLICT(channel_id,incident_id,event,reminder_slot) DO NOTHING")
+        .bind(&a.origin).execute(&a.db).await?;
     Ok(())
 }
 pub(crate) async fn deliver(a: &App) -> Result<()> {
@@ -232,6 +246,18 @@ pub(crate) async fn deliver(a: &App) -> Result<()> {
     let jobs=sqlx::query("UPDATE notification_deliveries SET due_at=now()+interval '60 seconds' WHERE id IN(SELECT id FROM notification_deliveries WHERE state='pending' AND due_at<=now() ORDER BY due_at LIMIT 8) RETURNING *").fetch_all(&a.db).await?;
     for job in jobs {
         let id: Uuid = job.get("id");
+        if job.get::<String, _>("event") == "DOWN"
+            && let Some(incident_id) = job.get::<Option<Uuid>, _>("incident_id") {
+            let open: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM incidents WHERE id=$1 AND ended_at IS NULL)")
+                .bind(incident_id)
+                .fetch_one(&a.db)
+                .await?;
+            if !open {
+                sqlx::query("UPDATE notification_deliveries SET state='cancelled',last_error=NULL WHERE id=$1")
+                    .bind(id).execute(&a.db).await?;
+                continue;
+            }
+        }
         let channel_id: Option<Uuid> = job.get("channel_id");
         let channel = if let Some(channel_id) = channel_id {
             sqlx::query("SELECT * FROM notification_channels WHERE id=$1 AND enabled")

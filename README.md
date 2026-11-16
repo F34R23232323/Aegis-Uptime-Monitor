@@ -144,7 +144,7 @@ Existing installations need a database and matching encryption-key backup before
 <details>
 <summary><strong>Notifications and incidents</strong></summary>
 
-- Discord embeds with validated templates, preview, event routing, monitor selection, mention controls, failure cooldowns, UTC quiet hours and delayed DOWN escalation; generic JSON webhooks and SMTP email channels are also supported. Email delivery requires API-side `SMTP_HOST`, `SMTP_FROM` and optional SMTP credentials in `.env`.
+- Discord embeds with validated templates, preview, event routing, monitor selection, mention controls, failure cooldowns, UTC quiet hours, delayed DOWN escalation and repeat reminders; generic JSON webhooks and SMTP email channels are also supported. Email delivery requires API-side `SMTP_HOST`, `SMTP_FROM` and optional SMTP credentials in `.env`.
 - **Send test** queues a real delivery. Saving a channel or previewing an embed does not send one.
 - Durable jobs retry provider failures across restarts. Delivery is at least once, so a crash at the wrong moment can repeat a provider message.
 - Automatic measured incidents stay private until you explicitly publish safe editorial text to a selected status page.

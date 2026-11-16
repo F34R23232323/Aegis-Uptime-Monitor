@@ -97,6 +97,7 @@ export interface Channel {
 	quiet_start_minute: number | null;
 	quiet_end_minute: number | null;
 	delay_seconds: number;
+	reminder_seconds: number;
 	id: string;
 	name: string;
 	provider: string;

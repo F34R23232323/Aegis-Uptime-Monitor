@@ -247,6 +247,33 @@ async fn incident_hysteresis_dedup_public_redaction_and_maintenance(pool: sqlx::
         "MAINTENANCE"
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn down_reminders_are_deduplicated_and_stop_after_recovery(pool: sqlx::PgPool) {
+    let a = app(pool);
+    let cookie = owner_session(&a).await;
+    let (_, created, _) = request(&a, "POST", "/monitors", input(), Some(&cookie)).await;
+    let monitor: Uuid = created["id"].as_str().unwrap().parse().unwrap();
+    let channel = Uuid::new_v4();
+    let incident = Uuid::new_v4();
+    sqlx::query("INSERT INTO notification_channels(id,name,provider,secret,reminder_seconds) VALUES($1,'reminders','webhook','encrypted',300)")
+        .bind(channel).execute(&a.db).await.unwrap();
+    sqlx::query("INSERT INTO incidents(id,monitor_id,title,started_at) VALUES($1,$2,'test',now()-interval '11 minutes')")
+        .bind(incident).bind(monitor).execute(&a.db).await.unwrap();
+    sqlx::query("INSERT INTO notification_deliveries(id,channel_id,incident_id,event,payload,state) VALUES($1,$2,$3,'DOWN','{}','sent')")
+        .bind(Uuid::new_v4()).bind(channel).bind(incident).execute(&a.db).await.unwrap();
+    engine::enqueue_reminders(&a).await.unwrap();
+    engine::enqueue_reminders(&a).await.unwrap();
+    let slots: Vec<i32> = sqlx::query_scalar("SELECT reminder_slot FROM notification_deliveries WHERE incident_id=$1 ORDER BY reminder_slot")
+        .bind(incident).fetch_all(&a.db).await.unwrap();
+    assert_eq!(slots, vec![0, 2]);
+    sqlx::query("UPDATE incidents SET ended_at=now() WHERE id=$1")
+        .bind(incident).execute(&a.db).await.unwrap();
+    engine::enqueue_reminders(&a).await.unwrap();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM notification_deliveries WHERE incident_id=$1")
+        .bind(incident).fetch_one(&a.db).await.unwrap();
+    assert_eq!(count, 2);
+}
 #[sqlx::test(migrations = "../../migrations")]
 async fn agent_auth_idempotency_rotation_and_ownership(pool: sqlx::PgPool) {
     let a = app(pool);
