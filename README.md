@@ -6,7 +6,7 @@
 
 Rust checks and agents · PostgreSQL history · SvelteKit dashboard · Public status pages
 
-[Get started](#self-host-in-5-steps) · [Screenshots](#screenshots) · [Features](#features) · [Troubleshooting](#troubleshooting) · [Documentation](#documentation)
+[Get started](#self-host-in-5-steps) · [Full screenshot gallery](docs/screenshots/README.md) · [Features](#features) · [Troubleshooting](#troubleshooting) · [Documentation](#documentation)
 
 </div>
 
@@ -27,6 +27,8 @@ Rust checks and agents · PostgreSQL history · SvelteKit dashboard · Public st
 ## Screenshots
 
 These are captures of the **real Svelte interface with synthetic example data**. They do not show a production instance or actual uptime.
+
+**[Browse all 38 screenshots →](docs/screenshots/README.md)** Every workspace page, public status tab, and the main monitor, incident, notification, status page, resource, maintenance, and server configuration views are shown there.
 
 ![Aegis overview with monitor states, uptime and an incident](docs/screenshots/dashboard.png)
 
