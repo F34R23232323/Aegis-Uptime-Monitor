@@ -1,0 +1,9 @@
+# Set APP_URL=https://status.example.com in .env. DNS must point here.
+# Install Caddy on the host; it obtains certificates using ACME.
+status.example.com {
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  reverse_proxy 127.0.0.1:8080 {
+    flush_interval -1
+  }
+}

@@ -1,0 +1,22 @@
+# Example for an existing PM2 app owner. Review binary/Node paths before installation.
+# As bot: pm2 start <your ecosystem file>; pm2 save
+[Unit]
+Description=PM2 applications for bot
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=forking
+User=bot
+Group=bot
+Environment=PM2_HOME=/home/bot/.pm2
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+PIDFile=/home/bot/.pm2/pm2.pid
+ExecStart=/usr/local/bin/pm2 resurrect
+ExecReload=/usr/local/bin/pm2 reload all
+ExecStop=/usr/local/bin/pm2 kill
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+LimitNOFILE=65536
+[Install]
+WantedBy=multi-user.target

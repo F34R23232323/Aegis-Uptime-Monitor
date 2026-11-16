@@ -1,0 +1,31 @@
+[Unit]
+Description=Aegis Monitor web (localhost 5930)
+After=network-online.target aegis-api-5930.service
+Wants=network-online.target aegis-api-5930.service
+
+[Service]
+Type=simple
+User=f34rless
+Group=f34rless
+WorkingDirectory=/webs/aegis/aegis-monitor/apps/web
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=5932
+Environment=ORIGIN=https://status.f34rless.dev
+Environment=AEGIS_INTERNAL_API_URL=http://127.0.0.1:5931
+ExecStart=/usr/bin/node build
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

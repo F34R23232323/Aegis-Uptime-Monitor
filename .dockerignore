@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+.cargo
+.rustup
+.npm
+target
+**/node_modules
+**/.svelte-kit
+**/build
+**/test-results
+**/playwright-report

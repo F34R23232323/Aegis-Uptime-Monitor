@@ -1,0 +1,29 @@
+[Unit]
+Description=Aegis Monitor localhost gateway (port 5930)
+After=network-online.target aegis-api-5930.service aegis-web-5930.service
+Wants=network-online.target aegis-api-5930.service aegis-web-5930.service
+
+[Service]
+Type=simple
+User=f34rless
+Group=f34rless
+RuntimeDirectory=aegis-gateway-5930
+RuntimeDirectoryMode=0750
+ExecStartPre=/usr/sbin/nginx -t -c /etc/aegis/nginx-5930.conf
+ExecStart=/usr/sbin/nginx -c /etc/aegis/nginx-5930.conf -g "daemon off;"
+ExecReload=/usr/sbin/nginx -s reload -c /etc/aegis/nginx-5930.conf
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

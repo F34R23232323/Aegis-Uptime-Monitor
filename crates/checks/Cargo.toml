@@ -1,0 +1,17 @@
+[package]
+name = "aegis-checks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+aegis-core.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+url = "2"
+tokio-rustls = "0.26"
+webpki-roots = "1"
+x509-parser = "0.18"
+hickory-resolver = "0.26.3"
+ipnet = "2"

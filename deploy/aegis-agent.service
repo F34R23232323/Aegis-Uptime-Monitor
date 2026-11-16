@@ -1,0 +1,26 @@
+[Unit]
+Description=Aegis infrastructure observer
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=bot
+Group=bot
+EnvironmentFile=/etc/aegis/agent.env
+ExecStart=/usr/local/bin/aegis-agent
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# PM2 may need to write its sockets/state; restrict this to the selected home.
+ReadWritePaths=/home/bot/.pm2
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+[Install]
+WantedBy=multi-user.target

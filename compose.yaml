@@ -1,0 +1,95 @@
+name: aegis
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: aegis
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U aegis -d aegis']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    logging: *logging
+  api:
+    build:
+      context: .
+      dockerfile: deploy/server.Dockerfile
+      target: server
+    environment:
+      DATABASE_URL: postgresql://aegis:${POSTGRES_PASSWORD}@db:5432/aegis
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set a 64-character random hex ENCRYPTION_KEY}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-Aegis Monitor}
+      APP_ACCENT: "${APP_ACCENT:-#a18aff}"
+      ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-false}
+      CHECK_WORKERS: ${CHECK_WORKERS:-16}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      ORIGIN: ${APP_URL:-http://localhost:8080}
+      AEGIS_INTERNAL_API_URL: http://api:3001
+      NO_PROXY: "api,localhost,127.0.0.1,::1,${NO_PROXY:-}"
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+  gateway:
+    image: nginx:1.28-alpine
+    ports: ['127.0.0.1:${PORT:-8080}:8080']
+    volumes: [./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro]
+    depends_on:
+      api: {condition: service_healthy}
+      web: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, 'wget -Y off -q -O /dev/null http://127.0.0.1:8080/healthz']
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    logging: *logging
+  agent:
+    profiles: [agent]
+    build:
+      context: .
+      dockerfile: deploy/server.Dockerfile
+      target: agent
+    environment:
+      AEGIS_URL: ${AEGIS_URL:-http://gateway:8080}
+      AEGIS_AGENT_TOKEN: ${AEGIS_AGENT_TOKEN:-}
+      ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-false}
+      AEGIS_DOCKER: 'false'
+      NO_PROXY: "gateway,localhost,127.0.0.1,::1,${NO_PROXY:-}"
+    depends_on:
+      gateway: {condition: service_healthy}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+volumes:
+  postgres_data:

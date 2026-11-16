@@ -1,0 +1,30 @@
+[Unit]
+Description=Aegis restricted Docker discovery proxy
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=aegisdproxy
+Group=appsvc
+SupplementaryGroups=docker
+RuntimeDirectory=aegis-docker-proxy
+RuntimeDirectoryMode=0750
+UMask=0007
+ExecStart=/usr/bin/python3 /usr/local/libexec/aegis-docker-readonly-proxy.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

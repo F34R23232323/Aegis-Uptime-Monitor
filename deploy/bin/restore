@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 2 || "$1" != '--into-empty-database' ]]; then echo 'Usage: deploy/bin/restore --into-empty-database /absolute/path/aegis.sql.gz' >&2; exit 2; fi
+restore_source=$2
+if [[ "$restore_source" != /* || ! -f "$restore_source" ]]; then echo 'An existing absolute backup path is required.' >&2; exit 2; fi
+restore_repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$restore_repository"
+gzip -t "$restore_source"
+restore_table_count=$(docker compose exec -T db psql -U aegis -d aegis -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+if [[ "$restore_table_count" != '0' ]]; then echo 'Refusing restore: destination database is not empty. This command never drops data.' >&2; exit 1; fi
+gzip -dc "$restore_source" | docker compose exec -T db psql -U aegis -d aegis -v ON_ERROR_STOP=1 --single-transaction
+echo 'Restore completed. Configure the matching ENCRYPTION_KEY before starting the API.'

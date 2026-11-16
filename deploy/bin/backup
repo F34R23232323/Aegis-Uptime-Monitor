@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+if [[ $# -ne 1 ]]; then echo 'Usage: deploy/bin/backup /absolute/path/aegis.sql.gz' >&2; exit 2; fi
+backup_destination=$1
+if [[ "$backup_destination" != /* ]]; then echo 'Choose an absolute backup path.' >&2; exit 2; fi
+if [[ -e "$backup_destination" ]]; then echo 'Refusing to overwrite an existing backup.' >&2; exit 2; fi
+backup_repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+cd "$backup_repository"
+backup_temporary=$(mktemp "${backup_destination}.partial.XXXXXX")
+trap 'rm -f -- "$backup_temporary"' EXIT
+docker compose exec -T db pg_dump -U aegis -d aegis --no-owner --no-acl | gzip > "$backup_temporary"
+gzip -t "$backup_temporary"
+mv -n -- "$backup_temporary" "$backup_destination"
+echo "Backup written: $backup_destination"
+echo 'Store an encrypted off-host copy and back up ENCRYPTION_KEY separately.'

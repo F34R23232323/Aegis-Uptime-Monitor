@@ -1,0 +1,38 @@
+# Requires Docker Compose 2.24.4+ for !reset. Set AEGIS_DOMAIN and DNS first.
+services:
+  api:
+    environment:
+      APP_ENV: production
+      APP_URL: https://${AEGIS_DOMAIN:?Set AEGIS_DOMAIN to your own DNS hostname}
+  web:
+    environment:
+      ORIGIN: https://${AEGIS_DOMAIN:?Set AEGIS_DOMAIN}
+  gateway:
+    ports: !reset []
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      AEGIS_DOMAIN: ${AEGIS_DOMAIN:?Set AEGIS_DOMAIN}
+      NO_PROXY: "gateway,localhost,127.0.0.1,::1,${NO_PROXY:-}"
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes:
+      - ./deploy/Caddyfile.production:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      gateway: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, 'wget -Y off -q -O /dev/null http://127.0.0.1:2019/config/']
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,71 @@
+# Local credentials and machine-specific configuration. Keep examples in Git.
+.env
+.env.*
+!.env.example
+*.env
+*.env.*
+!*.env.example
+!.env.*.example
+!.env.sample
+*.local
+*.secret
+*.secrets
+
+# Private keys, certificates and credential stores.
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.age
+
+# Rust outputs and local toolchains. Cargo.lock is intentionally tracked.
+/target/
+**/target/
+/.cargo/
+/.rustup/
+
+# Node, SvelteKit and frontend build output. package-lock.json is tracked.
+**/node_modules/
+**/.svelte-kit/
+**/build/
+**/dist/
+**/.vite/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/blob-report/
+/.npm/
+
+# Python helper bytecode and caches.
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime data, exports, backups and logs.
+*.log
+*.log.*
+*.pid
+*.pid.lock
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.tar.gz
+*.tgz
+/backups/
+/data/
+
+# Editors and operating systems.
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

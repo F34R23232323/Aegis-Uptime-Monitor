@@ -1,0 +1,27 @@
+[Unit]
+Description=Aegis Monitor API and scheduler (localhost 5930)
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=f34rless
+Group=f34rless
+EnvironmentFile=/etc/aegis/api-5930.env
+ExecStart=/usr/local/bin/aegis-server-5930
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
